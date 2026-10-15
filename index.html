@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Μίλα">
+<meta name="theme-color" content="#0f1222">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Μίλα</title>
+<style>
+:root{
+  --bg:#0f1222;--panel:#181c33;--panel2:#20253f;--text:#eef0fb;--muted:#9aa0c4;
+  --accent:#7c83ff;--accent2:#b07cff;--ok:#3ddc97;--warn:#ffb454;--bad:#ff6b81;--line:#2a3050;
+  --safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px);
+}
+@media (prefers-color-scheme:light){
+  :root{--bg:#f4f5fb;--panel:#fff;--panel2:#eceef9;--text:#161a33;--muted:#5d6388;--line:#dcdff0;--accent:#5a62f0}
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
+body{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+header{padding:calc(var(--safe-t) + 10px) 16px 8px;display:flex;align-items:center;gap:8px}
+header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.2px}
+.grow{flex:1}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:13px;color:var(--muted);white-space:nowrap}
+.iconbtn{width:38px;height:38px;border-radius:12px;background:var(--panel);border:1px solid var(--line);font-size:18px;display:grid;place-items:center}
+.bar{height:5px;background:var(--panel2);margin:0 16px 8px;border-radius:9px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .4s}
+nav{display:flex;gap:6px;padding:0 16px 8px}
+nav button{flex:1;padding:8px;border-radius:11px;color:var(--muted);font-weight:600;font-size:14px}
+nav button.on{background:var(--panel);color:var(--text);border:1px solid var(--line)}
+main{flex:1;min-height:0;position:relative}
+.view{position:absolute;inset:0;overflow-y:auto;padding:6px 16px 16px;display:none;-webkit-overflow-scrolling:touch}
+.view.on{display:block}
+#chat{display:none;flex-direction:column;gap:12px}
+#chat.on{display:flex}
+.empty{margin:auto;text-align:center;max-width:320px;padding:30px 0}
+.empty h2{margin:0 0 6px;font-size:22px}
+.empty p{color:var(--muted);margin:0 0 18px}
+.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-weight:700;border-radius:14px;padding:13px 20px}
+.secondary{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-weight:600}
+.msg{max-width:88%;padding:10px 13px;border-radius:16px;word-wrap:break-word}
+.msg.me{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:5px}
+.msg.ai{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:5px}
+.msg.ai .replay{margin-left:6px;opacity:.7}
+.msg.ai.blur .t{filter:blur(7px)}
+.fix{align-self:flex-end;max-width:92%;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:12px;padding:9px 12px;font-size:14px}
+.fix.ok{border-left-color:var(--ok);color:var(--muted);padding:5px 12px;font-size:13px}
+.fix .row{margin:4px 0}
+.fix s{color:var(--bad);text-decoration-thickness:2px}
+.fix b{color:var(--ok)}
+.fix .why{color:var(--muted);font-size:13px}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;background:var(--panel2);color:var(--muted);margin-right:6px;text-transform:uppercase;letter-spacing:.4px}
+.nat{margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);color:var(--muted)}
+.nat em{color:var(--text);font-style:normal}
+.think{align-self:flex-start;color:var(--muted);font-size:14px;padding:4px 8px}
+footer{padding:8px 16px calc(var(--safe-b) + 12px);background:linear-gradient(transparent,var(--bg) 25%)}
+#live{min-height:22px;text-align:center;color:var(--muted);font-size:15px;margin-bottom:6px;padding:0 6px;max-height:66px;overflow:hidden}
+.controls{display:flex;align-items:center;justify-content:center;gap:22px}
+.micbtn{width:84px;height:84px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:34px;
+  display:grid;place-items:center;box-shadow:0 8px 28px rgba(124,131,255,.45);transition:transform .15s}
+.micbtn:active{transform:scale(.94)}
+.micbtn.listening{background:linear-gradient(135deg,#ff5f7a,#ff8a5f);animation:pulse 1.3s infinite}
+.micbtn.thinking{opacity:.6;animation:none}
+.micbtn.speaking{background:linear-gradient(135deg,#3ddc97,#2fb7c9)}
+#rvMic{width:72px;height:72px;font-size:30px}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,95,122,.55)}100%{box-shadow:0 0 0 26px rgba(255,95,122,0)}}
+#hint{text-align:center;font-size:13px;color:var(--muted);margin-top:8px}
+.side{width:46px;height:46px;border-radius:50%;background:var(--panel);border:1px solid var(--line);font-size:19px;display:grid;place-items:center}
+.side.on{border-color:var(--accent);color:var(--accent)}
+#typebox{display:none;gap:8px;margin-bottom:10px}
+#typebox.on{display:flex}
+#typebox input{flex:1}
+input,select,textarea{width:100%;font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:10px 12px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{min-height:70px;resize:vertical}
+label{display:block;font-weight:600;margin:14px 0 5px;font-size:14px}
+.sub{color:var(--muted);font-size:13px;margin-top:4px}
+.chk{display:flex;align-items:center;gap:10px;margin:10px 0}
+.chk input{width:20px;height:20px;accent-color:var(--accent)}
+.sheet{position:fixed;inset:0;background:rgba(5,7,20,.6);display:none;align-items:flex-end;z-index:20}
+.sheet.on{display:flex}
+.sheet .card{background:var(--bg);width:100%;max-height:92dvh;overflow-y:auto;border-radius:22px 22px 0 0;padding:18px 16px calc(var(--safe-b) + 24px);border-top:1px solid var(--line)}
+.card h2{margin:0 0 4px;font-size:20px}
+.sum{white-space:pre-wrap;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0}
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px}
+.nb{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;font-size:14px}
+.nb .del{float:right;color:var(--muted);font-size:18px;line-height:1}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(var(--safe-b) + 130px);background:#2b1d28;color:#ffd7de;border:1px solid #6b2c3b;border-radius:12px;padding:10px 14px;font-size:14px;display:none;z-index:30}
+
+.daily{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;text-align:left}
+.daily h3{margin:0 0 8px;font-size:17px}
+.step{display:flex;gap:10px;align-items:flex-start;padding:6px 0}
+.step span{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--line);font-size:13px;flex:none;color:var(--muted)}
+.step.done span{background:var(--ok);border-color:var(--ok);color:#06281a}
+.step.done{color:var(--muted)}
+.step small{color:var(--muted)}
+.scn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;margin-bottom:7px;border-radius:12px;background:var(--panel);border:1px solid var(--line)}
+.scn span{font-size:20px}
+.scn.on{border-color:var(--accent);box-shadow:0 0 0 2px rgba(124,131,255,.3)}
+.banner{align-self:center;font-size:13px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 12px;text-align:center}
+.vchips{align-self:flex-start;display:flex;flex-wrap:wrap;gap:6px;max-width:92%}
+.vchip{font-size:13px;padding:5px 10px;border-radius:999px;border:1px dashed var(--accent);color:var(--accent);background:transparent;text-align:left}
+.vchip:disabled{opacity:.6;border-style:solid}
+.w{border-radius:4px}
+.w:active{background:var(--panel2)}
+.big{font-size:22px;font-weight:700;margin:12px 0;line-height:1.3}
+.res{font-weight:700;margin:10px 0 4px}
+.res.good{color:var(--ok)}
+.res.bad{color:var(--bad)}
+.flash{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px 16px;text-align:center;margin:12px 0;min-height:130px}
+.head{display:flex;align-items:center;justify-content:space-between}
+.live2{min-height:22px;color:var(--muted);text-align:center;margin:6px 0}
+.say{opacity:.7;margin-left:4px}
+#toast.good{background:#14291f;color:#c9f5df;border-color:#2c6b4a}
+#btnCall.on{background:#ff5f7a;border-color:transparent;color:#fff;animation:pulse 1.6s infinite}
+</style>
+</head>
+<body>
+<header>
+  <h1>Μίλα</h1>
+  <span class="chip" id="streak">🔥 0</span>
+  <span class="chip" id="today">0/15</span>
+  <span class="grow"></span>
+  <button class="iconbtn" id="btnNew" title="Νέα συνομιλία">🎭</button>
+  <button class="iconbtn" id="btnEnd" title="Σύνοψη">🏁</button>
+  <button class="iconbtn" id="btnSet" title="Ρυθμίσεις">⚙️</button>
+</header>
+<div class="bar"><i id="barfill"></i></div>
+<nav>
+  <button class="on" data-tab="chat">Συνομιλία</button>
+  <button data-tab="notes">Λάθη</button>
+  <button data-tab="vocab">Λεξιλόγιο</button>
+</nav>
+<main>
+  <section class="view on" id="chat"></section>
+  <section class="view" id="notes"></section>
+  <section class="view" id="vocab"></section>
+</main>
+<footer>
+  <div id="typebox"><input id="typeIn" placeholder="Γράψε στα αγγλικά…" autocomplete="off" autocapitalize="sentences"><button class="secondary" id="typeGo">Στείλε</button></div>
+  <div id="live"></div>
+  <div class="controls">
+    <button class="side" id="btnCall" title="Κλήση">📞</button>
+    <button class="micbtn" id="mic" aria-label="Μικρόφωνο">🎙️</button>
+    <button class="side" id="btnType" title="Πληκτρολόγιο">⌨️</button>
+  </div>
+  <div id="hint"></div>
+</footer>
+
+<div class="sheet" id="setSheet"><div class="card">
+  <h2>Ρυθμίσεις</h2>
+  <label>Ποιο AI να συνομιλεί μαζί σου</label>
+  <select id="sProv"><option value="claude">Claude (Anthropic)</option><option value="openai">ChatGPT (OpenAI)</option></select>
+  <div id="grpClaude">
+    <label>Claude API key</label>
+    <input id="sKey" type="password" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div class="sub">Μένει μόνο στο κινητό σου και στέλνεται μόνο στο api.anthropic.com.</div>
+    <label>Μοντέλο Claude</label>
+    <select id="sModel">
+      <option value="claude-haiku-5-5">Haiku 5.5 — γρήγορο & φθηνό</option>
+      <option value="claude-sonnet-5-5">Sonnet 5.5 — πιο έξυπνες διορθώσεις</option>
+    </select>
+  </div>
+  <label>OpenAI API key <span class="sub">(για ChatGPT ή για φωνές/αναγνώριση της OpenAI)</span></label>
+  <input id="sOaKey" type="password" placeholder="sk-…" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <div class="sub">Μένει μόνο στο κινητό σου και στέλνεται μόνο στο api.openai.com.</div>
+  <div id="grpOAModel">
+    <label>Μοντέλο OpenAI</label>
+    <select id="sOaModel">
+      <option value="gpt-6-luna">gpt-6-luna — γρήγορο & φθηνό</option>
+      <option value="gpt-6.1-sol">gpt-6.1-sol — ισορροπημένο</option>
+      <option value="gpt-6-astra">gpt-6-astra — το πιο ισχυρό</option>
+    </select>
+    <label>Ή γράψε άλλο μοντέλο (προαιρετικό)</label>
+    <input id="sOaCustom" placeholder="όνομα μοντέλου" autocomplete="off" autocapitalize="off" spellcheck="false">
+  </div>
+  <label>Επίπεδο</label>
+  <select id="sLevel"><option>B1</option><option>B2</option><option>C1</option></select>
+  <label>Τα ενδιαφέροντά σου / πού χρησιμοποιείς αγγλικά</label>
+  <textarea id="sInt" placeholder="π.χ. DevOps, Kubernetes, interviews για backend ρόλους, ταξίδια, ποδόσφαιρο…"></textarea>
+  <label>Προφορά</label>
+  <select id="sAccent"><option value="en-US">American (en-US)</option><option value="en-GB">British (en-GB)</option></select>
+  <label>Φωνή του AI</label>
+  <select id="sVoiceEng"><option value="browser">Φωνή του iPhone (δωρεάν)</option><option value="openai">Φωνή OpenAI (πιο φυσική, χρεώνεται)</option></select>
+  <div id="grpBV"><select id="sVoice" style="margin-top:8px"></select></div>
+  <div id="grpOV">
+    <select id="sOaVoice" style="margin-top:8px">
+      <option value="marin">marin</option><option value="cedar">cedar</option><option value="coral">coral</option><option value="alloy">alloy</option>
+      <option value="ash">ash</option><option value="ballad">ballad</option><option value="echo">echo</option><option value="fable">fable</option>
+      <option value="nova">nova</option><option value="onyx">onyx</option><option value="sage">sage</option><option value="shimmer">shimmer</option><option value="verse">verse</option>
+    </select>
+    <div class="sub">Η φωνή δημιουργείται από AI και δεν είναι ανθρώπινη. Θέλει OpenAI key.</div>
+  </div>
+  <label>Ταχύτητα ομιλίας: <span id="rateVal"></span></label>
+  <input id="sRate" type="range" min="0.7" max="1.2" step="0.05">
+  <label>Αναγνώριση της φωνής σου</label>
+  <select id="sSttEng"><option value="browser">Safari / iPhone (δωρεάν)</option><option value="openai">OpenAI (χρεώνεται, δεν εξαρτάται από το Dictation)</option></select>
+  <div id="grpSttModel"><select id="sSttModel" style="margin-top:8px">
+    <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe — φθηνό</option>
+    <option value="gpt-4o-transcribe">gpt-4o-transcribe — πιο ακριβές</option>
+    <option value="whisper-1">whisper-1</option>
+  </select></div>
+  <label>Πόση σιωπή σημαίνει «τελείωσα»: <span id="silVal"></span></label>
+  <input id="sSil" type="range" min="800" max="2800" step="100">
+  <div class="sub">Μικρότερη τιμή = απαντάει πιο γρήγορα, αλλά μπορεί να σε διακόψει όταν σκέφτεσαι.</div>
+  <label>Εξηγήσεις διορθώσεων</label>
+  <select id="sExplain"><option value="el">Στα ελληνικά</option><option value="en">Στα αγγλικά</option></select>
+  <label>Τι να διορθώνει</label>
+  <div class="chk"><input type="checkbox" id="fGrammar"><span>Γραμματική</span></div>
+  <div class="chk"><input type="checkbox" id="fVocab"><span>Λεξιλόγιο</span></div>
+  <div class="chk"><input type="checkbox" id="fNat"><span>Φυσικότητα</span></div>
+  <label>Στόχος ημέρας (απαντήσεις)</label>
+  <input id="sGoal" type="number" min="3" max="100">
+  <div class="chk"><input type="checkbox" id="sHide"><span>Θόλωσε το κείμενο του AI (εξάσκηση ακοής — πάτα για να φανεί)</span></div>
+  <div style="display:flex;gap:10px;margin-top:18px"><button class="primary" id="setSave" style="flex:1">Αποθήκευση</button><button class="secondary" id="setClose">Κλείσιμο</button></div>
+</div></div>
+
+<div class="sheet" id="sumSheet"><div class="card">
+  <h2>Σύνοψη συνεδρίας</h2>
+  <div class="sum" id="sumText">…</div>
+  <button class="secondary" id="sumClose" style="width:100%">Κλείσιμο</button>
+</div></div>
+
+<div class="sheet" id="stSheet"><div class="card">
+  <div class="head"><h2>Νέα συνομιλία</h2><button class="iconbtn" id="stClose">✕</button></div>
+  <div id="stList" style="margin-top:10px"></div>
+  <textarea id="stCustom" placeholder="Περίγραψε το σενάριο, π.χ. «είσαι πελάτης που παραπονιέται για downtime»" style="display:none;margin-bottom:8px"></textarea>
+  <label>Δυσκολία</label>
+  <select id="sDiff"><option value="easy">Εύκολη — απλά αγγλικά, πιο αργά</option><option value="normal">Κανονική</option><option value="hard">Δύσκολη — native pace, idioms</option></select>
+  <div class="chk"><input type="checkbox" id="stDrill"><span>Εστίαση στα προηγούμενα λάθη μου</span></div>
+  <button class="primary" id="stGo" style="width:100%;margin-top:12px">Ξεκίνα</button>
+</div></div>
+
+<div class="sheet" id="rvSheet"><div class="card">
+  <div class="head"><h2>Επανάληψη λαθών</h2><button class="iconbtn" id="rvClose">✕</button></div>
+  <div class="sub" id="rvCount"></div>
+  <div class="big" id="rvPrompt"></div>
+  <div class="sub" id="rvTag"></div>
+  <div class="live2" id="rvLive"></div>
+  <div id="rvResult"></div>
+  <div class="controls" style="margin-top:14px"><button class="micbtn" id="rvMic">🎙️</button><button class="secondary" id="rvNext">Παράλειψη</button></div>
+</div></div>
+
+<div class="sheet" id="fcSheet"><div class="card">
+  <div class="head"><h2>Flashcards</h2><button class="iconbtn" id="fcClose">✕</button></div>
+  <div class="sub" id="fcCount"></div>
+  <div class="flash"><div class="big" id="fcFront"></div><div id="fcBack" style="display:none"></div></div>
+  <button class="primary" id="fcShow" style="width:100%">Δες την απάντηση</button>
+  <div id="fcGrade" style="display:none;gap:10px"><button class="secondary" id="fcNo" style="flex:1">Δεν το ήξερα</button><button class="primary" id="fcYes" style="flex:1">Το ήξερα</button></div>
+</div></div>
+
+<div class="sheet" id="dictSheet"><div class="card">
+  <h2 id="dWord"></h2><div class="sub" id="dPos"></div>
+  <div class="sum" id="dBody">…</div>
+  <div style="display:flex;gap:10px"><button class="secondary" id="dSpeak">🔊</button><button class="primary" id="dSave" style="flex:1">＋ Στο λεξιλόγιο</button><button class="secondary" id="dClose">Κλείσιμο</button></div>
+</div></div>
+
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
