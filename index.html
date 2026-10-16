@@ -120,6 +120,9 @@ label{display:block;font-weight:600;margin:14px 0 5px;font-size:14px}
 .say{opacity:.7;margin-left:4px}
 #toast.good{background:#14291f;color:#c9f5df;border-color:#2c6b4a}
 #btnCall.on{background:#ff5f7a;border-color:transparent;color:#fff;animation:pulse 1.6s infinite}
+.keyrow{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:10px}
+.keyrow .kr-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.keyrow input{margin-top:2px}
 </style>
 </head>
 <body>
@@ -157,30 +160,14 @@ label{display:block;font-weight:600;margin:14px 0 5px;font-size:14px}
 <div class="sheet" id="setSheet"><div class="card">
   <h2>Ρυθμίσεις</h2>
   <label>Ποιο AI να συνομιλεί μαζί σου</label>
-  <select id="sProv"><option value="claude">Claude (Anthropic)</option><option value="openai">ChatGPT (OpenAI)</option></select>
-  <div id="grpClaude">
-    <label>Claude API key</label>
-    <input id="sKey" type="password" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <div class="sub">Μένει μόνο στο κινητό σου και στέλνεται μόνο στο api.anthropic.com.</div>
-    <label>Μοντέλο Claude</label>
-    <select id="sModel">
-      <option value="claude-haiku-5-5">Haiku 5.5 — γρήγορο & φθηνό</option>
-      <option value="claude-sonnet-5-5">Sonnet 5.5 — πιο έξυπνες διορθώσεις</option>
-    </select>
-  </div>
-  <label>OpenAI API key <span class="sub">(για ChatGPT ή για φωνές/αναγνώριση της OpenAI)</span></label>
-  <input id="sOaKey" type="password" placeholder="sk-…" autocomplete="off" autocapitalize="off" spellcheck="false">
-  <div class="sub">Μένει μόνο στο κινητό σου και στέλνεται μόνο στο api.openai.com.</div>
-  <div id="grpOAModel">
-    <label>Μοντέλο OpenAI</label>
-    <select id="sOaModel">
-      <option value="gpt-6-luna">gpt-6-luna — γρήγορο & φθηνό</option>
-      <option value="gpt-6.1-sol">gpt-6.1-sol — ισορροπημένο</option>
-      <option value="gpt-6-astra">gpt-6-astra — το πιο ισχυρό</option>
-    </select>
-    <label>Ή γράψε άλλο μοντέλο (προαιρετικό)</label>
-    <input id="sOaCustom" placeholder="όνομα μοντέλου" autocomplete="off" autocapitalize="off" spellcheck="false">
-  </div>
+  <select id="sProv"></select>
+  <div class="sub" id="provNote"></div>
+  <label>Μοντέλο</label>
+  <select id="sModelP"></select>
+  <input id="sModelCustom" placeholder="ή γράψε άλλο όνομα μοντέλου (προαιρετικό)" style="margin-top:8px" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <label>Κλειδιά API</label>
+  <div class="sub">Μένουν μόνο στο κινητό σου και στέλνονται μόνο στον αντίστοιχο πάροχο. Συμπλήρωσε όσους παρόχους θα χρησιμοποιήσεις και πάτα «Δοκιμή σύνδεσης» σε καθέναν.</div>
+  <div id="keyRows"></div>
   <label>Επίπεδο</label>
   <select id="sLevel"><option>B1</option><option>B2</option><option>C1</option></select>
   <label>Τα ενδιαφέροντά σου / πού χρησιμοποιείς αγγλικά</label>
@@ -201,7 +188,12 @@ label{display:block;font-weight:600;margin:14px 0 5px;font-size:14px}
   <label>Ταχύτητα ομιλίας: <span id="rateVal"></span></label>
   <input id="sRate" type="range" min="0.7" max="1.2" step="0.05">
   <label>Αναγνώριση της φωνής σου</label>
-  <select id="sSttEng"><option value="browser">Safari / iPhone (δωρεάν)</option><option value="openai">OpenAI (χρεώνεται, δεν εξαρτάται από το Dictation)</option></select>
+  <select id="sSttEng">
+    <option value="browser">Safari / iPhone (δωρεάν)</option>
+    <option value="groq">Groq Whisper (δωρεάν, δεν εξαρτάται από το Dictation)</option>
+    <option value="gemini">Google Gemini (δωρεάν, μετράει στα όρια αιτημάτων)</option>
+    <option value="openai">OpenAI (χρεώνεται)</option>
+  </select>
   <div id="grpSttModel"><select id="sSttModel" style="margin-top:8px">
     <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe — φθηνό</option>
     <option value="gpt-4o-transcribe">gpt-4o-transcribe — πιο ακριβές</option>

@@ -6,9 +6,32 @@ const STEPS = [1, 3, 7, 14, 30, 60];          // spaced-repetition intervals (da
 const FAST = 'claude-haiku-5-5';               // cheap Claude model for lookups / challenge generation
 const FAST_OA = 'gpt-6-luna';                  // cheap OpenAI model for the same
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+const GEM = 'https://generativelanguage.googleapis.com/v1beta';
+const GROQ = 'https://api.groq.com/openai/v1';
+const MISTRAL = 'https://api.mistral.ai/v1';
+const PROV = {
+  gemini:{name:'Google Gemini', free:true, ph:'AIza…', keyHelp:'aistudio.google.com/apikey',
+    models:[['gemini-3.5-flash-lite','γρήγορο'],['gemini-3.8-flash','πιο έξυπνο'],['gemini-3.1-flash-lite','οικονομικό']],
+    note:'Δωρεάν με λογαριασμό Google. Προσοχή: οι όροι της Google για εφαρμογές που προσφέρονται σε χρήστες στον Ευρωπαϊκό Οικονομικό Χώρο (η Ελλάδα ανήκει σε αυτόν) μπορεί να απαιτούν πληρωμένο πλάνο, και στο δωρεάν πλάνο τα δεδομένα χρησιμοποιούνται για βελτίωση των προϊόντων της Google.'},
+  groq:{name:'Groq', free:true, ph:'gsk_…', keyHelp:'console.groq.com/keys',
+    models:[['qwen/qwen3.8-27b','γρήγορο'],['openai/gpt-oss-120b','πιο έξυπνο'],['openai/gpt-oss-20b','μικρό']],
+    note:'Δωρεάν και πολύ γρήγορο, με ανοιχτά μοντέλα. Δίνει και δωρεάν αναγνώριση φωνής (Whisper). Τα όρια ανά ημέρα φαίνονται στο console.groq.com/settings/limits.'},
+  mistral:{name:'Mistral', free:true, ph:'key…', keyHelp:'console.mistral.ai (ενότητα API Keys)',
+    models:[['mistral-small-latest','γρήγορο'],['mistral-medium-latest','πιο έξυπνο'],['mistral-large-latest','το μεγαλύτερο']],
+    note:'Ευρωπαϊκή εταιρεία με δωρεάν πλάνο για δοκιμές. Τα όρια φαίνονται στο console.mistral.ai/limits. Έλεγξε και τους όρους δεδομένων του δωρεάν πλάνου.'},
+  claude:{name:'Claude (Anthropic)', free:false, ph:'sk-ant-…', keyHelp:'console.anthropic.com/settings/keys',
+    models:[['claude-haiku-5-5','γρήγορο και φθηνό'],['claude-sonnet-5-5','πιο έξυπνες διορθώσεις']],
+    note:'Χρεώνεται ανά χρήση. Η συνδρομή του Claude chat δεν περιλαμβάνει API.'},
+  openai:{name:'ChatGPT (OpenAI)', free:false, ph:'sk-…', keyHelp:'platform.openai.com/api-keys',
+    models:[['gpt-6-luna','γρήγορο και φθηνό'],['gpt-6.1-sol','ισορροπημένο'],['gpt-6-astra','το πιο ισχυρό']],
+    note:'Χρεώνεται ανά χρήση. Η συνδρομή ChatGPT δεν περιλαμβάνει API. Το key χρησιμοποιείται και για τις φωνές OpenAI.'}
+};
+const PROV_ORDER = ['gemini','groq','mistral','claude','openai'];
 const DEFAULTS = {
-  provider:'claude', apiKey:'', model:'claude-haiku-5-5',
-  openaiKey:'', oaModel:'gpt-6-luna', oaCustom:'',
+  provider:'groq',
+  keys:{gemini:'',groq:'',mistral:'',claude:'',openai:''},
+  models:{gemini:'gemini-3.5-flash-lite',groq:'qwen/qwen3.8-27b',mistral:'mistral-small-latest',claude:'claude-haiku-5-5',openai:'gpt-6-luna'},
+  customs:{gemini:'',groq:'',mistral:'',claude:'',openai:''},
   voiceEngine:'browser', oaVoice:'marin', sttEngine:'browser', sttModel:'gpt-4o-mini-transcribe', silMs:1600,
   level:'B2', interests:'', accent:'en-US', explain:'el', voice:'', rate:1,
   hideAI:false, goal:15, difficulty:'normal', focus:{grammar:true,vocabulary:true,natural:true}
@@ -40,19 +63,32 @@ function load(){
   try{
     const d = JSON.parse(localStorage.getItem(KEY) || '{}');
     const s = d.settings || {};
-    return {settings:{...DEFAULTS,...s,focus:{...DEFAULTS.focus,...(s.focus||{})}},
+    const st = {...DEFAULTS,...s,
+      focus:{...DEFAULTS.focus,...(s.focus||{})},
+      keys:{...DEFAULTS.keys,...(s.keys||{})},
+      models:{...DEFAULTS.models,...(s.models||{})},
+      customs:{...DEFAULTS.customs,...(s.customs||{})}};
+    // migrate settings saved by older versions (single Claude / OpenAI key)
+    if(s.apiKey && !st.keys.claude) st.keys.claude = s.apiKey;
+    if(s.openaiKey && !st.keys.openai) st.keys.openai = s.openaiKey;
+    if(s.model && !(s.models && s.models.claude)) st.models.claude = s.model;
+    if(s.oaModel && !(s.models && s.models.openai)) st.models.openai = s.oaModel;
+    if(s.oaCustom && !st.customs.openai) st.customs.openai = s.oaCustom;
+    if(!PROV[st.provider]) st.provider = 'groq';
+    return {settings:st,
       notebook:d.notebook||[],vocab:d.vocab||[],days:d.days||{},daily:d.daily||null,dict:d.dict||{}};
   }catch(e){
-    return {settings:{...DEFAULTS,focus:{...DEFAULTS.focus}},notebook:[],vocab:[],days:{},daily:null,dict:{}};
+    return {settings:{...DEFAULTS,focus:{...DEFAULTS.focus},keys:{...DEFAULTS.keys},models:{...DEFAULTS.models},customs:{...DEFAULTS.customs}},
+      notebook:[],vocab:[],days:{},daily:null,dict:{}};
   }
 }
 let DB = load();
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){} }
 
 /* ---------- helpers: keys / engines ---------- */
-const hasKey = () => DB.settings.provider === 'openai' ? !!DB.settings.openaiKey : !!DB.settings.apiKey;
-const useOAVoice = () => DB.settings.voiceEngine === 'openai' && !!DB.settings.openaiKey;
-const useOAStt = () => DB.settings.sttEngine === 'openai' && !!DB.settings.openaiKey;
+const hasKey = () => !!DB.settings.keys[DB.settings.provider];
+const useOAVoice = () => DB.settings.voiceEngine === 'openai' && !!DB.settings.keys.openai;
+const sttActive = () => { const e = DB.settings.sttEngine; return e !== 'browser' && !!DB.settings.keys[e]; };
 
 /* ---------- state ---------- */
 let convo = [];            // [{role,content}]
@@ -85,7 +121,8 @@ function setState(s){
 }
 function toast(msg, good){
   const t = $('#toast'); t.textContent = msg; t.className = good ? 'good' : ''; t.style.display = 'block';
-  clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 5000);
+  t.onclick = () => { t.style.display = 'none'; };
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', good ? 4500 : 12000);
 }
 function setLive(t){ $('#live').textContent = t; $('#rvLive').textContent = t; }
 function pad(n){ return String(n).padStart(2,'0'); }
@@ -120,46 +157,128 @@ function srs(it, ok){
 const dueNotes = () => DB.notebook.filter(c => (c.due||0) <= Date.now());
 const dueVocab = () => DB.vocab.filter(v => (v.due||0) <= Date.now());
 
-/* ---------- LLM (Claude or OpenAI) ---------- */
-async function llm(system, messages, max, fast){
+/* ---------- LLM (Gemini / Groq / Mistral / Claude / OpenAI) ---------- */
+function modelFor(p, fast){
   const s = DB.settings;
-  if(s.provider === 'openai'){
-    const model = fast ? FAST_OA : (s.oaCustom || s.oaModel);
-    const reasoning = /^(gpt-[56]|o\d)/.test(model);
-    const lowLat = /luna/.test(model);
-    const body = {model, instructions:system, input:messages.map(m => ({role:m.role,content:m.content}))};
-    if(reasoning) body.reasoning = {effort: lowLat ? 'none' : 'low'};
-    body.max_output_tokens = (max||700) + (reasoning && !lowLat ? 1000 : 0);
-    const r = await fetch('https://api.openai.com/v1/responses',{
-      method:'POST',
-      headers:{'content-type':'application/json','authorization':'Bearer '+s.openaiKey},
-      body:JSON.stringify(body)
-    });
-    if(!r.ok){
-      let m = ''; try{ m = (await r.json()).error.message; }catch(e){}
-      throw new Error(r.status + (m ? ': '+m : ''));
+  if(fast && p === 'claude') return FAST;
+  if(fast && p === 'openai') return FAST_OA;
+  return s.customs[p] || s.models[p] || PROV[p].models[0][0];
+}
+async function errFrom(r){
+  let m = '';
+  try{
+    const j = await r.json(), e = j && j.error;
+    m = (e && (e.message || (typeof e === 'string' ? e : ''))) || (j && j.message) || '';
+  }catch(_){}
+  const err = new Error(r.status + (m ? ': ' + m : ''));
+  err.status = r.status;
+  return err;
+}
+// JSON POST with one automatic retry on a short-lived 429 (per-minute free-tier limits)
+async function post(url, headers, body){
+  for(let i = 0; ; i++){
+    const r = await fetch(url,{method:'POST',headers:{'content-type':'application/json',...headers},body:JSON.stringify(body)});
+    if(r.ok) return r.json();
+    if(r.status === 429 && i === 0){
+      const e = await errFrom(r.clone ? r.clone() : r);
+      if(!/quota|billing|credit|per day|daily/i.test(e.message)){
+        const ra = parseFloat(r.headers && r.headers.get ? r.headers.get('retry-after') : '');
+        await new Promise(res => setTimeout(res, Math.min(8, Math.max(1.5, isNaN(ra) ? 2 : ra)) * 1000));
+        continue;
+      }
+      throw e;
     }
-    const j = await r.json();
-    const t = (j.output||[]).filter(o => o.type === 'message')
-      .map(o => (o.content||[]).filter(c => c.type === 'output_text').map(c => c.text).join('')).join('');
-    return t || j.output_text || '';
+    throw await errFrom(r);
   }
-  const r = await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{
-      'content-type':'application/json',
-      'x-api-key':s.apiKey,
-      'anthropic-version':'2023-06-01',
-      'anthropic-dangerous-direct-browser-access':'true'
-    },
-    body:JSON.stringify({model:fast ? FAST : s.model,max_tokens:max||700,system,messages})
-  });
-  if(!r.ok){
-    let m = ''; try{ m = (await r.json()).error.message; }catch(e){}
-    throw new Error(r.status + (m ? ': '+m : ''));
-  }
-  const j = await r.json();
+}
+const stripThink = t => String(t || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+
+async function oaResponses(key, model, system, messages, max){
+  const reasoning = /^(gpt-[56]|o\d)/.test(model);
+  const lowLat = /luna/.test(model);
+  const body = {model, instructions:system, input:messages.map(m => ({role:m.role,content:m.content}))};
+  if(reasoning) body.reasoning = {effort: lowLat ? 'none' : 'low'};
+  body.max_output_tokens = (max||700) + (reasoning && !lowLat ? 1000 : 0);
+  const j = await post('https://api.openai.com/v1/responses',{authorization:'Bearer '+key}, body);
+  const t = (j.output||[]).filter(o => o.type === 'message')
+    .map(o => (o.content||[]).filter(c => c.type === 'output_text').map(c => c.text).join('')).join('');
+  return t || j.output_text || '';
+}
+async function claudeCall(key, model, system, messages, max){
+  const j = await post('https://api.anthropic.com/v1/messages',
+    {'x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    {model,max_tokens:max||700,system,messages});
   return (j.content||[]).map(c => c.text||'').join('');
+}
+// Groq and Mistral both speak the OpenAI chat-completions format
+async function chatCompat(url, key, body){
+  const j = await post(url,{authorization:'Bearer '+key}, body);
+  const c = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+  const t = stripThink(Array.isArray(c) ? c.filter(x => !x.type || x.type === 'text').map(x => x.text || '').join('') : c);
+  if(!t) throw new Error('Άδεια απάντηση');
+  return t;
+}
+const withSystem = (system, messages) => [{role:'system',content:system}, ...messages.map(m => ({role:m.role,content:m.content}))];
+
+let gemThink = true;      // switched off automatically if the model rejects thinkingConfig
+function gemText(j){
+  const c = j.candidates && j.candidates[0];
+  const t = c && c.content && c.content.parts ? c.content.parts.filter(p => p.text && !p.thought).map(p => p.text).join('') : '';
+  if(t.trim()) return t;
+  const br = j.promptFeedback && j.promptFeedback.blockReason;
+  throw new Error(br ? 'Το αίτημα μπλοκαρίστηκε από τα φίλτρα της Google (' + br + ')' : 'Άδεια απάντηση' + (c && c.finishReason ? ' (' + c.finishReason + ')' : ''));
+}
+async function geminiGen(key, model, body, max){
+  const url = GEM + '/models/' + model.replace(/^models\//, '') + ':generateContent';
+  for(let i = 0; i < 2; i++){
+    const b = {...body, generationConfig:{maxOutputTokens:(max||700) + 1000, ...(gemThink ? {thinkingConfig:{thinkingLevel:'low'}} : {})}};
+    try{ return gemText(await post(url,{'x-goog-api-key':key}, b)); }
+    catch(e){
+      if(i === 0 && gemThink && e.status === 400 && /think/i.test(e.message)){ gemThink = false; continue; }
+      throw e;
+    }
+  }
+}
+function geminiCall(key, model, system, messages, max){
+  return geminiGen(key, model, {
+    systemInstruction:{parts:[{text:system}]},
+    contents:messages.map(m => ({role:m.role === 'assistant' ? 'model' : 'user', parts:[{text:m.content}]}))
+  }, max);
+}
+function callProv(p, key, model, system, messages, max){
+  if(p === 'openai') return oaResponses(key, model, system, messages, max);
+  if(p === 'gemini') return geminiCall(key, model, system, messages, max);
+  if(p === 'groq'){
+    const oss = /gpt-oss/.test(model);
+    return chatCompat(GROQ + '/chat/completions', key, {model, messages:withSystem(system, messages),
+      max_completion_tokens:(max||700) + (oss ? 800 : 0), ...(oss ? {reasoning_effort:'low'} : {})});
+  }
+  if(p === 'mistral') return chatCompat(MISTRAL + '/chat/completions', key, {model, messages:withSystem(system, messages), max_tokens:max||700});
+  return claudeCall(key, model, system, messages, max);
+}
+function hintFor(m, p){
+  m = String(m || ''); p = p || DB.settings.provider;
+  if(/Δεν έγινε σύνδεση|Load failed|Failed to fetch|NetworkError/i.test(m)) return ' → Το αίτημα δεν έφτασε (δίκτυο ή περιορισμός του browser).';
+  if(/^401|API key not valid|API_KEY_INVALID|invalid.?api.?key|incorrect api key|unauthorized/i.test(m)) return ' → Το API key δεν είναι σωστό ή έχει ανακληθεί.';
+  if(/^403|PERMISSION_DENIED|location is not supported/i.test(m)) return ' → Δεν επιτρέπεται η πρόσβαση (περιορισμός περιοχής ή κλειδί χωρίς δικαίωμα).';
+  if(/^429|quota|rate.?limit|RESOURCE_EXHAUSTED|credit balance/i.test(m)){
+    return (p === 'openai' || p === 'claude')
+      ? ' → Δεν έχεις διαθέσιμα credits στο API. Η συνδρομή του chat δεν τα περιλαμβάνει· πρόσθεσε credits στην πλατφόρμα του παρόχου (Billing).'
+      : ' → Έφτασες το όριο του δωρεάν πλάνου (ανά λεπτό ή ημέρα). Περίμενε λίγο ή διάλεξε άλλον πάροχο στις Ρυθμίσεις.';
+  }
+  if(/^404|not found|does not exist|model/i.test(m)) return ' → Το μοντέλο δεν είναι διαθέσιμο στο κλειδί σου. Στις Ρυθμίσεις πάτα «Δοκιμή σύνδεσης» και διάλεξε άλλο.';
+  return '';
+}
+async function llm(system, messages, max, fast){
+  try{ return await llmRaw(system, messages, max, fast); }
+  catch(e){
+    if(e instanceof TypeError) throw new Error('Δεν έγινε σύνδεση (' + e.message + ')');
+    throw e;
+  }
+}
+function llmRaw(system, messages, max, fast){
+  const p = DB.settings.provider;
+  return callProv(p, DB.settings.keys[p], modelFor(p, fast), system, messages, max);
 }
 
 /* ---------- prompts ---------- */
@@ -339,7 +458,7 @@ async function turn(userText){
     if(!reply) throw new Error('Άδεια απάντηση, ξαναδοκίμασε');
   }catch(e){
     convo.pop(); th.remove(); setState('idle');
-    toast('Σφάλμα: ' + e.message);
+    toast('Σφάλμα: ' + e.message + hintFor(e.message));
     failCall(e);
     return;
   }
@@ -430,7 +549,7 @@ function speakOpenAI(text, fin, cleanup){
   const instr = TTS_INSTR + (r < 0.9 ? ' Speak a little slower than normal.' : r > 1.1 ? ' Speak a little faster than normal.' : '');
   fetch('https://api.openai.com/v1/audio/speech',{
     method:'POST', signal:ctrl.signal,
-    headers:{'content-type':'application/json','authorization':'Bearer '+DB.settings.openaiKey},
+    headers:{'content-type':'application/json','authorization':'Bearer '+DB.settings.keys.openai},
     body:JSON.stringify({model:'gpt-4o-mini-tts',voice:DB.settings.oaVoice||'marin',input:text,instructions:instr,response_format:'wav'})
   }).then(async res => {
     if(!res.ok){
@@ -446,7 +565,7 @@ function speakOpenAI(text, fin, cleanup){
     return audioEl.play();
   }).catch(e => {
     if(e && e.name === 'AbortError') return;
-    if(!ttsWarned){ ttsWarned = true; toast('Φωνή OpenAI: ' + e.message + ' — χρησιμοποιώ τη φωνή του iPhone'); }
+    if(!ttsWarned){ ttsWarned = true; toast('Φωνή OpenAI: ' + e.message + hintFor(e.message, 'openai') + ' — χρησιμοποιώ τη φωνή του iPhone'); }
     speakBrowser(text, fin, cleanup);
   });
 }
@@ -479,7 +598,7 @@ function abortListen(){
 function listen(handler){
   handler = handler || turn;
   if(!hasKey()){ openSettings(); toast('Βάλε πρώτα το API key'); if(call.active) endCall(); return; }
-  if(useOAStt()){
+  if(sttActive()){
     if(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) return listenOA(handler);
     toast('Η εγγραφή ήχου δεν υποστηρίζεται εδώ — χρησιμοποιώ την αναγνώριση του Safari.');
   }
@@ -572,22 +691,74 @@ function recordOnce(stream){
     mr.start();
   });
 }
-async function transcribe(blob){
+const STT_PROMPT = 'Transcribe exactly what the speaker says, including any grammar mistakes. Do not correct or rephrase.';
+function encodeWav(samples, rate){
+  const buf = new ArrayBuffer(44 + samples.length * 2), v = new DataView(buf);
+  const w = (o, s) => { for(let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0,'RIFF'); v.setUint32(4, 36 + samples.length * 2, true); w(8,'WAVE'); w(12,'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36,'data'); v.setUint32(40, samples.length * 2, true);
+  for(let i = 0; i < samples.length; i++){
+    const x = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7FFF, true);
+  }
+  return new Blob([buf], {type:'audio/wav'});
+}
+// Safari records mp4/aac; Gemini is safest with WAV, so convert to 16 kHz mono
+async function toWav16k(blob){
+  const data = await blob.arrayBuffer();
+  const ac = actx || (actx = new (window.AudioContext || window.webkitAudioContext)());
+  const audio = await new Promise((ok, no) => ac.decodeAudioData(data, ok, no));
+  const Off = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const off = new Off(1, Math.max(1, Math.ceil(audio.duration * 16000)), 16000);
+  const src = off.createBufferSource(); src.buffer = audio; src.connect(off.destination); src.start();
+  const out = await off.startRendering();
+  return encodeWav(out.getChannelData(0), 16000);
+}
+function blobToB64(blob){
+  return new Promise((ok, no) => {
+    const fr = new FileReader();
+    fr.onload = () => ok(String(fr.result).split(',')[1] || '');
+    fr.onerror = () => no(fr.error);
+    fr.readAsDataURL(blob);
+  });
+}
+async function transcribeGemini(blob){
+  let send = blob, mime = (blob.type || 'audio/mp4').split(';')[0];
+  try{ send = await toWav16k(blob); mime = 'audio/wav'; }
+  catch(e){ if(mime === 'audio/mp4') mime = 'audio/m4a'; }
+  const data = await blobToB64(send);
+  try{
+    const t = await geminiGen(DB.settings.keys.gemini, modelFor('gemini', true), {
+      contents:[{role:'user', parts:[{inlineData:{mimeType:mime, data}},
+        {text:'Transcribe this audio verbatim in English. Output only the transcript, exactly as spoken, including any grammar mistakes and filler words. Do not correct, translate, summarise or add anything. If there is no speech, output nothing.'}]}]
+    }, 400);
+    return t.trim();
+  }catch(e){
+    if(/^Άδεια απάντηση/.test(e.message)) return '';
+    throw e;
+  }
+}
+async function transcribe(blob, engine){
+  if(engine === 'gemini') return transcribeGemini(blob);
+  const oa = engine === 'openai';
+  const model = oa ? (DB.settings.sttModel || 'gpt-4o-mini-transcribe') : 'whisper-large-v3-turbo';
   const t = blob.type || 'audio/mp4';
   const ext = t.includes('webm') ? 'webm' : t.includes('wav') ? 'wav' : 'mp4';
   const fd = new FormData();
   fd.append('file', new File([blob], 'speech.' + ext, {type:t}));
-  fd.append('model', DB.settings.sttModel || 'gpt-4o-mini-transcribe');
+  fd.append('model', model);
   fd.append('language', 'en');
-  fd.append('prompt', 'Transcribe exactly what the speaker says, including any grammar mistakes. Do not correct or rephrase.');
-  const r = await fetch('https://api.openai.com/v1/audio/transcriptions',{
-    method:'POST', headers:{authorization:'Bearer '+DB.settings.openaiKey}, body:fd
+  if(oa && !/whisper/.test(model)) fd.append('prompt', STT_PROMPT);
+  const r = await fetch(oa ? 'https://api.openai.com/v1/audio/transcriptions' : GROQ + '/audio/transcriptions',{
+    method:'POST', headers:{authorization:'Bearer '+DB.settings.keys[engine]}, body:fd
   });
-  if(!r.ok){
-    let m = ''; try{ m = (await r.json()).error.message; }catch(e){}
-    throw new Error(r.status + (m ? ': '+m : ''));
-  }
-  return ((await r.json()).text || '').trim();
+  if(!r.ok) throw await errFrom(r);
+  let text = ((await r.json()).text || '').trim();
+  // Whisper tends to invent these on near-silence
+  if(/whisper/.test(model) && /^(thank you[.!]?|thanks for watching[.!]?|bye[.!]?|you)$/i.test(text)) text = '';
+  return text;
 }
 async function listenOA(handler){
   abortListen(); stopSpeech();
@@ -606,9 +777,9 @@ async function listenOA(handler){
       }
       setState('thinking'); setLive('Μεταγραφή…');
       let text = '';
-      try{ text = await transcribe(r.blob); }
+      try{ text = await transcribe(r.blob, DB.settings.sttEngine); }
       catch(e){
-        setLive(''); setState('idle'); toast('Σφάλμα μεταγραφής: ' + e.message);
+        setLive(''); setState('idle'); toast('Σφάλμα μεταγραφής: ' + e.message + hintFor(e.message, DB.settings.sttEngine));
         if(call.active){ if(/^40[13]/.test(e.message)) endCall(); else relisten(800); }
         return;
       }
@@ -702,7 +873,7 @@ async function lookup(word, ctx){
         const keys = Object.keys(DB.dict); if(keys.length > 300) delete DB.dict[keys[0]];
         save();
       }
-    }catch(e){ if(tok === lookTok) $('#dBody').textContent = 'Σφάλμα: ' + e.message; return; }
+    }catch(e){ if(tok === lookTok) $('#dBody').textContent = 'Σφάλμα: ' + e.message + hintFor(e.message); return; }
   }
   if(tok !== lookTok) return;
   if(!d || !d.el){ $('#dBody').textContent = 'Δεν βρέθηκε μετάφραση.'; return; }
@@ -909,16 +1080,109 @@ function fillVoices(){
 }
 function paintGroups(){
   const show = (id, on) => $(id).style.display = on ? 'block' : 'none';
-  show('#grpClaude', $('#sProv').value === 'claude');
-  show('#grpOAModel', $('#sProv').value === 'openai');
   show('#grpBV', $('#sVoiceEng').value === 'browser');
   show('#grpOV', $('#sVoiceEng').value === 'openai');
   show('#grpSttModel', $('#sSttEng').value === 'openai');
 }
+let draft = null, shownProv = null, modelLists = {};
+function stash(){
+  if(!shownProv || !draft) return;
+  draft.models[shownProv] = $('#sModelP').value || draft.models[shownProv];
+  draft.customs[shownProv] = $('#sModelCustom').value.trim();
+}
+function paintModels(p){
+  const sel = $('#sModelP'), labels = Object.fromEntries(PROV[p].models);
+  const list = modelLists[p] || PROV[p].models.map(m => m[0]);
+  const want = draft.models[p];
+  const ids = list.includes(want) ? list : [want, ...list];
+  sel.innerHTML = ids.map(id => '<option value="'+esc(id)+'">'+esc(labels[id] ? id + ' — ' + labels[id] : id)+'</option>').join('');
+  sel.value = want;
+  $('#sModelCustom').value = draft.customs[p] || '';
+  $('#provNote').textContent = PROV[p].note;
+}
+function buildKeyRows(){
+  const wrap = $('#keyRows');
+  wrap.innerHTML = PROV_ORDER.map(p => {
+    const c = PROV[p];
+    return '<div class="keyrow"><div class="kr-h"><b>'+esc(c.name)+'</b><span class="tag">'+(c.free ? 'δωρεάν' : 'χρεώνεται')+'</span></div>'+
+      '<input type="password" data-key="'+p+'" placeholder="'+esc(c.ph)+'" autocomplete="off" autocapitalize="off" spellcheck="false">'+
+      '<div class="sub">Πάρε το key από: '+esc(c.keyHelp)+'</div>'+
+      '<button class="secondary" data-test="'+p+'" style="width:100%;margin-top:8px">Δοκιμή σύνδεσης</button>'+
+      '<div class="sum" data-out="'+p+'" style="display:none"></div></div>';
+  }).join('');
+  wrap.querySelectorAll('[data-key]').forEach(i => i.value = DB.settings.keys[i.dataset.key] || '');
+  wrap.querySelectorAll('[data-test]').forEach(b => b.onclick = () => {
+    const p = b.dataset.test;
+    testKey(p, wrap.querySelector('[data-key="'+p+'"]').value.trim(), wrap.querySelector('[data-out="'+p+'"]'));
+  });
+}
+function sortPref(p, ids){
+  const pref = PROV[p].models.map(m => m[0]);
+  return [...pref.filter(x => ids.includes(x)), ...ids.filter(x => !pref.includes(x)).sort()];
+}
+async function listModels(p, key){
+  const get = async (url, headers) => {
+    const r = await fetch(url,{headers});
+    if(!r.ok) throw await errFrom(r);
+    return r.json();
+  };
+  if(p === 'openai'){
+    const j = await get('https://api.openai.com/v1/models',{authorization:'Bearer '+key});
+    return sortPref(p, j.data.map(x => x.id).filter(id => /^(gpt|o\d)/.test(id) &&
+      !/(audio|realtime|tts|transcribe|image|embedding|moderation|search|diarize|instruct|whisper|codex|dall)/.test(id)));
+  }
+  if(p === 'gemini'){
+    const j = await get(GEM + '/models?pageSize=200',{'x-goog-api-key':key});
+    return sortPref(p, (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent') &&
+      /^models\/gemini-/.test(m.name) && !/(tts|image|live|audio|embedding|robotics|computer-use|native|-exp)/.test(m.name))
+      .map(m => m.name.replace('models/', '')));
+  }
+  if(p === 'groq'){
+    const j = await get(GROQ + '/models',{authorization:'Bearer '+key});
+    return sortPref(p, (j.data || []).map(x => x.id).filter(id => !/(whisper|orpheus|guard|safeguard|tts)/.test(id)));
+  }
+  if(p === 'mistral'){
+    const j = await get(MISTRAL + '/models',{authorization:'Bearer '+key});
+    const ids = (j.data || []).filter(m => !m.capabilities || m.capabilities.completion_chat !== false)
+      .map(m => m.id).filter(id => !/(embed|moderation|ocr|voxtral|transcri)/.test(id));
+    return sortPref(p, ids.filter(id => /-latest$/.test(id)).concat(ids.filter(id => !/-latest$/.test(id))));
+  }
+  return null;          // Claude: static list
+}
+async function testKey(p, key, out){
+  out.style.display = 'block'; out.textContent = 'Δοκιμάζω…';
+  if(!key){ out.textContent = 'Βάλε πρώτα το key.'; return; }
+  const netErr = e => e instanceof TypeError ? 'Δεν έγινε σύνδεση (' + e.message + ')' : e.message;
+  let list = null, note = '';
+  try{ list = await listModels(p, key); }
+  catch(e){
+    const m = netErr(e);
+    if(/^401|^403|Δεν έγινε σύνδεση|API key not valid|API_KEY_INVALID/i.test(m)){ out.textContent = '✗ ' + m + hintFor(m, p); return; }
+    note = '(Δεν διάβασα τη λίστα μοντέλων: ' + m + ')\n';
+  }
+  stash();
+  if(list && list.length){
+    modelLists[p] = list;
+    if(!list.includes(draft.models[p]) && !draft.customs[p]) draft.models[p] = list[0];
+    if(p === shownProv) paintModels(p);
+  }
+  const model = draft.customs[p] || draft.models[p];
+  try{
+    const t = await callProv(p, key, model, 'Reply with the single word OK.', [{role:'user',content:'ping'}], 30);
+    out.textContent = note + '✓ Το κλειδί δουλεύει. Το μοντέλο «' + model + '» απάντησε: ' + (t.trim() || '(κενό)') +
+      (list && list.length ? '\nΔιαθέσιμα μοντέλα συνομιλίας: ' + list.length + '.' : '') + '\nΠάτα Αποθήκευση.';
+  }catch(e){
+    const m = netErr(e);
+    out.textContent = note + '✗ Το μοντέλο «' + model + '» απέτυχε: ' + m + hintFor(m, p) +
+      (list && list.length ? '\nΔιάλεξε άλλο μοντέλο από τη λίστα και ξαναπάτα τη δοκιμή.' : '');
+  }
+}
 function openSettings(){
   const s = DB.settings;
-  $('#sProv').value = s.provider; $('#sKey').value = s.apiKey; $('#sModel').value = s.model;
-  $('#sOaKey').value = s.openaiKey; $('#sOaModel').value = s.oaModel; $('#sOaCustom').value = s.oaCustom;
+  draft = {models:{...s.models}, customs:{...s.customs}};
+  $('#sProv').innerHTML = PROV_ORDER.map(p => '<option value="'+p+'">'+esc(PROV[p].name + (PROV[p].free ? ' — δωρεάν' : ' — χρεώνεται'))+'</option>').join('');
+  $('#sProv').value = s.provider; shownProv = s.provider; paintModels(shownProv);
+  buildKeyRows();
   $('#sLevel').value = s.level;
   $('#sInt').value = s.interests; $('#sAccent').value = s.accent; $('#sExplain').value = s.explain;
   $('#sVoiceEng').value = s.voiceEngine; $('#sOaVoice').value = s.oaVoice;
@@ -930,15 +1194,17 @@ function openSettings(){
   fillVoices(); paintGroups();
   $('#setSheet').classList.add('on');
 }
-['#sProv','#sVoiceEng','#sSttEng'].forEach(id => $(id).onchange = paintGroups);
+['#sVoiceEng','#sSttEng'].forEach(id => $(id).onchange = paintGroups);
+$('#sProv').onchange = () => { stash(); shownProv = $('#sProv').value; paintModels(shownProv); };
 $('#btnSet').onclick = openSettings;
 $('#setClose').onclick = () => $('#setSheet').classList.remove('on');
 $('#sRate').oninput = e => $('#rateVal').textContent = e.target.value;
 $('#sSil').oninput = e => $('#silVal').textContent = (e.target.value/1000).toFixed(1) + ' s';
 $('#setSave').onclick = () => {
   const s = DB.settings;
-  s.provider = $('#sProv').value; s.apiKey = $('#sKey').value.trim(); s.model = $('#sModel').value;
-  s.openaiKey = $('#sOaKey').value.trim(); s.oaModel = $('#sOaModel').value; s.oaCustom = $('#sOaCustom').value.trim();
+  stash();
+  s.provider = $('#sProv').value; s.models = {...draft.models}; s.customs = {...draft.customs};
+  document.querySelectorAll('#keyRows [data-key]').forEach(i => { s.keys[i.dataset.key] = i.value.trim(); });
   s.level = $('#sLevel').value;
   s.interests = $('#sInt').value.trim(); s.accent = $('#sAccent').value; s.voice = $('#sVoice').value;
   s.voiceEngine = $('#sVoiceEng').value; s.oaVoice = $('#sOaVoice').value;
@@ -948,11 +1214,16 @@ $('#setSave').onclick = () => {
   s.goal = Math.max(3, parseInt($('#sGoal').value) || 15); s.hideAI = $('#sHide').checked;
   ttsWarned = false;
   save(); renderProgress(); refreshEmpty(); setState(state); $('#setSheet').classList.remove('on');
+  const warn = [];
+  if(!s.keys[s.provider]) warn.push('Λείπει το key του ' + PROV[s.provider].name + '.');
+  if(s.sttEngine !== 'browser' && !s.keys[s.sttEngine]) warn.push('Λείπει το key για την αναγνώριση φωνής (' + s.sttEngine + '), θα χρησιμοποιηθεί το Safari.');
+  if(s.voiceEngine === 'openai' && !s.keys.openai) warn.push('Λείπει το OpenAI key για τη φωνή, θα χρησιμοποιηθεί η φωνή του iPhone.');
+  if(warn.length) toast(warn.join(' '));
 };
 if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = fillVoices;
 
 /* ---------- init ---------- */
 renderProgress(); setState('idle'); emptyState(); paintCall();
-if(!(window.SpeechRecognition || window.webkitSpeechRecognition) && !useOAStt()) $('#typebox').classList.add('on');
+if(!(window.SpeechRecognition || window.webkitSpeechRecognition) && !sttActive()) $('#typebox').classList.add('on');
 if(!hasKey()) setTimeout(openSettings, 400);
 if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
