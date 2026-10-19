@@ -805,6 +805,7 @@ function paintCall(){
 }
 function startCall(){
   if(!hasKey()){ openSettings(); toast('Βάλε πρώτα το API key'); return; }
+  if(typeof LIVE !== 'undefined' && LIVE.on) liveStop();
   call.active = true; paintCall(); unlockAudio(); lockScreen();
   if(!convo.length) startSession(lastOpts || {scenarioId:'free'});
   else if(state === 'idle') listen();
@@ -822,6 +823,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 $('#mic').onclick = () => {
+  if(typeof LIVE !== 'undefined' && LIVE.on){ liveStop(); return; }
   unlockAudio();
   if(state === 'idle') listen();
   else if(state === 'listening'){ if(recFinish) recFinish(); else { try{ rec.stop(); }catch(e){} } }
