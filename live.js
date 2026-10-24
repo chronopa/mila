@@ -32,6 +32,7 @@ function liveStart(){
     LIVE.outCtx.resume && LIVE.outCtx.resume();
   }catch(e){ toast('Ο browser δεν υποστηρίζει ήχο: ' + e.message); return; }
   if(chat.querySelector('.empty')) chat.innerHTML = '';
+  document.body.classList.add('live');
   LIVE.on = true; LIVE.ready = false; LIVE.retries = 0; LIVE.nextAt = 0; LIVE.turnAudio = false; LIVE.gotAnyAudio = false;
   LIVE.userEl = LIVE.aiEl = null; LIVE.userTxt = LIVE.aiTxt = '';
   $('#btnLive').classList.add('on');
@@ -313,6 +314,7 @@ function liveStop(){
   try{ LIVE.outCtx && LIVE.outCtx.close(); }catch(e){}
   LIVE.stream = LIVE.inCtx = LIVE.proc = LIVE.ws = LIVE.outCtx = null;
   LIVE.tapOn = false;
+  document.body.classList.remove('live');
   $('#btnLive').classList.remove('on');
   $('#liveSend').hidden = true;
   LIVE.talking = false;
