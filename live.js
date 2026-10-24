@@ -11,6 +11,11 @@ const LIVE = {
   userEl:null, aiEl:null, userTxt:'', aiTxt:''
 };
 
+// Εικονίδια κουμπιού: κυματομορφή όταν περιμένει να μιλήσεις, αεροπλανάκι αποστολής όταν μιλάς.
+const ICON_MIC = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+const ICON_WAVE = '<svg class="wv" viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><rect x="2" y="8" width="2.6" height="8" rx="1.3"/><rect x="6.7" y="4" width="2.6" height="16" rx="1.3"/><rect x="11.4" y="2" width="2.6" height="20" rx="1.3"/><rect x="16.1" y="5" width="2.6" height="14" rx="1.3"/><rect x="20.8" y="8" width="2.6" height="8" rx="1.3"/></svg>';
+const ICON_SEND = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>';
+
 function liveToggle(){ if(LIVE.on) liveStop(); else liveStart(); }
 $('#btnLive').onclick = liveToggle;
 
@@ -27,7 +32,7 @@ function liveStart(){
     LIVE.outCtx.resume && LIVE.outCtx.resume();
   }catch(e){ toast('Ο browser δεν υποστηρίζει ήχο: ' + e.message); return; }
   if(chat.querySelector('.empty')) chat.innerHTML = '';
-  LIVE.on = true; LIVE.ready = false; LIVE.retries = 0; LIVE.nextAt = 0;
+  LIVE.on = true; LIVE.ready = false; LIVE.retries = 0; LIVE.nextAt = 0; LIVE.turnAudio = false; LIVE.gotAnyAudio = false;
   LIVE.userEl = LIVE.aiEl = null; LIVE.userTxt = LIVE.aiTxt = '';
   $('#btnLive').classList.add('on');
   $('#hint').textContent = 'Συνδέομαι…';
@@ -35,6 +40,7 @@ function liveStart(){
     .then(stream => {
       if(!LIVE.on){ stream.getTracks().forEach(t => t.stop()); return; }
       LIVE.stream = stream;
+      try{ LIVE.outCtx && LIVE.outCtx.resume().catch(() => {}); }catch(e){}
       liveConnect();
       lockScreen();
     })
@@ -48,6 +54,8 @@ function liveConnect(){
     ws.send(JSON.stringify({setup:{
       model: LIVE_MODEL,
       generationConfig:{responseModalities:['AUDIO']},
+      // Χωρίς αυτόματη ανίχνευση: ο χρήστης πατά το κουμπί για να μιλήσει και ξαναπατά για αποστολή.
+      realtimeInputConfig:{automaticActivityDetection:{disabled:true}},
       systemInstruction:{parts:[{text: liveSystem()}]},
       inputAudioTranscription:{},
       outputAudioTranscription:{}
@@ -71,9 +79,10 @@ async function liveMsg(raw){
   try{ m = JSON.parse(typeof raw === 'string' ? raw : await raw.text()); }catch(e){ return; }
   if(m.setupComplete){
     LIVE.ready = true; LIVE.retries = 0;
+    $('#mic').className = 'micbtn'; $('#mic').innerHTML = ICON_MIC;
     liveStartMic();
     liveSendText('[START]');
-    $('#hint').textContent = 'Μίλα — είμαι εδώ';
+    $('#hint').textContent = 'Πάτα το 🎙️ για να μιλήσεις';
     return;
   }
   if(m.error){ toast('Σφάλμα: ' + (m.error.message || 'άγνωστο')); return; }
@@ -95,6 +104,7 @@ function liveUser(t){
     chat.appendChild(LIVE.userEl);
   }
   LIVE.userTxt += t;
+  LIVE.lastIn = Date.now();
   LIVE.userEl.textContent = LIVE.userTxt;
   scrollDown();
 }
@@ -118,9 +128,16 @@ function liveAI(t){
 }
 
 async function liveTurnDone(){
+  if(LIVE.talking) return;
   const u = LIVE.userTxt.trim(), a = LIVE.aiTxt.trim();
   const userEl = LIVE.userEl, aiEl = LIVE.aiEl;
-  LIVE.userEl = LIVE.aiEl = null; LIVE.userTxt = LIVE.aiTxt = '';
+  const gotAudio = LIVE.turnAudio;
+  LIVE.userEl = LIVE.aiEl = null; LIVE.userTxt = LIVE.aiTxt = ''; LIVE.turnAudio = false;
+  // Αν δεν ήρθε ήχος για αυτή την απάντηση, τη διαβάζει η φωνή της συσκευής, ώστε να μην μένει μόνο γραπτή.
+  if(a && !gotAudio && LIVE.on && !(LIVE.outCtx && LIVE.outCtx.state === 'running' && LIVE.gotAnyAudio)){
+    toast('Ο ήχος του Gemini δεν ήρθε εδώ, το διαβάζω με τη φωνή της συσκευής');
+    speakBrowser(a, () => {}, []);
+  }
   if(aiEl && a){
     aiEl.dataset.text = a;
     aiEl.querySelector('.t').innerHTML = wordify(a);
@@ -132,13 +149,16 @@ async function liveTurnDone(){
   if(u){
     const k = todayKey(), before = DB.days[k] || 0;
     DB.days[k] = before + 1; save(); renderProgress();
-    try{
-      const out = await liveAnalyze(u, a);
-      if(out && userEl) showAnalysis(userEl, aiEl, out);
-    }catch(e){ console.warn('live analysis failed', e); }
   }
 }
 
+// Διορθώσεις μόνο της φράσης σου (τρέχει ενώ απαντά το AI).
+async function liveAnalyzeUser(userText){
+  const p = hasKey() ? DB.settings.provider : 'gemini';
+  const content = 'Learner\'s message: "' + userText + '"';
+  const raw = await callProv(p, DB.settings.keys[p], modelFor(p, true), analysisPrompt(), [{role:'user', content}], 600);
+  return parseAnalysis(raw);
+}
 // Διορθώσεις: χρησιμοποιεί τον πάροχο που έχεις επιλέξει, αλλιώς Gemini (που ήδη έχει key).
 async function liveAnalyze(userText, reply){
   const p = hasKey() ? DB.settings.provider : 'gemini';
@@ -150,14 +170,14 @@ async function liveAnalyze(userText, reply){
 /* ---------- είσοδος ήχου (μικρόφωνο → PCM 16 kHz) ---------- */
 function liveStartMic(){
   if(!LIVE.stream || LIVE.inCtx) return;
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const ctx = LIVE.outCtx;           // ίδιο context με την έξοδο, ώστε το iOS να μη τα ανταγωνίζεται
   LIVE.inCtx = ctx;
-  ctx.resume && ctx.resume();
+  ctx.resume && ctx.resume().catch(() => {});
   const src = ctx.createMediaStreamSource(LIVE.stream);
-  const proc = ctx.createScriptProcessor(4096, 1, 1);
+  const proc = ctx.createScriptProcessor(2048, 1, 1);
   const ratio = ctx.sampleRate / 16000;
   proc.onaudioprocess = e => {
-    if(!LIVE.ws || LIVE.ws.readyState !== 1 || !LIVE.ready) return;
+    if(!LIVE.ws || LIVE.ws.readyState !== 1 || !LIVE.ready || !LIVE.talking) return;
     const input = e.inputBuffer.getChannelData(0);
     const n = Math.floor(input.length / ratio);
     const pcm = new Int16Array(n);
@@ -190,8 +210,13 @@ function b64ToInt16(b64){
 }
 function livePlay(inl){
   const ctx = LIVE.outCtx; if(!ctx) return;
+  if(ctx.state !== 'running'){ ctx.resume().catch(() => {}); liveNeedTap(); }
+  if(!LIVE.diag){ LIVE.diag = true; toast('Ήχος εξόδου: ' + ctx.state + ' · ' + ctx.sampleRate + ' Hz'); }
+  LIVE.turnAudio = true;
+  if(LIVE.relAt){ const ms = Date.now() - LIVE.relAt; LIVE.relAt = 0; toast('Πρώτος ήχος μετά την αποστολή: ' + ms + ' ms'); }
   const m = /rate=(\d+)/.exec(inl.mimeType || '');
   const rate = m ? parseInt(m[1], 10) : 24000;
+  LIVE.gotAnyAudio = true;
   const pcm = b64ToInt16(inl.data);
   const buf = ctx.createBuffer(1, pcm.length, rate);
   const ch = buf.getChannelData(0);
@@ -205,6 +230,56 @@ function livePlay(inl){
   LIVE.playing.push(src);
   src.onended = () => { LIVE.playing = LIVE.playing.filter(s => s !== src); };
   $('#hint').textContent = 'Μιλάει…';
+}
+function liveNeedTap(){
+  if(LIVE.tapOn) return;
+  LIVE.tapOn = true;
+  $('#hint').textContent = 'Πάτα μία φορά στην οθόνη για να ακούσεις τη φωνή';
+  document.addEventListener('click', () => {
+    try{ LIVE.outCtx && LIVE.outCtx.resume().catch(() => {}); }catch(e){}
+    LIVE.tapOn = false;
+    if(LIVE.on) $('#hint').textContent = 'Μίλα — είμαι εδώ';
+  }, {once:true});
+}
+// Κουμπί μικροφώνου στη ζωντανή λειτουργία: πρώτο πάτημα = μιλάς, δεύτερο = αποστολή.
+function liveTalk(){
+  if(!LIVE.on || !LIVE.ready || LIVE.talking) return;
+  const mic = $('#mic');
+  {
+    liveTurnDone();                 // κλείνει την τρέχουσα απάντηση του AI αν ακόμα γράφεται
+    liveFlush();                    // σταματά τη φωνή του AI αν μιλάει
+    LIVE.talking = true; LIVE.userEl = null; LIVE.userTxt = ''; LIVE.lastIn = 0;
+    LIVE.ws.send(JSON.stringify({realtimeInput:{activityStart:{}}}));
+    mic.className = 'micbtn listening'; mic.innerHTML = ICON_WAVE;
+    $('#liveSend').hidden = false; $('#liveSend').innerHTML = ICON_SEND;
+    $('#hint').textContent = 'Μιλάς… πάτα ➤ για αποστολή';
+  }
+}
+// Αποστολή όσων είπες (κουμπί ➤ δίπλα στην κυματομορφή).
+function liveSendNow(){
+  if(!LIVE.talking) return;
+  LIVE.talking = false;
+  LIVE.ws.send(JSON.stringify({realtimeInput:{activityEnd:{}}})); LIVE.relAt = Date.now();
+  $('#liveSend').hidden = true;
+  $('#mic').className = 'micbtn'; $('#mic').innerHTML = ICON_MIC;
+  $('#hint').textContent = 'Σε άκουσα…';
+  liveReview();
+}
+$('#liveSend').onclick = liveSendNow;
+// Περιμένει να ολοκληρωθεί η μεταγραφή και δείχνει τις διορθώσεις κάτω από τη φράση σου.
+function liveReview(){
+  const t0 = Date.now();
+  const tick = async () => {
+    const quiet = Date.now() - (LIVE.lastIn || 0) > 700;
+    if(!quiet && Date.now() - t0 < 4000) return setTimeout(tick, 150);
+    const u = LIVE.userTxt.trim(), el = LIVE.userEl;
+    if(!u || !el) return;
+    try{
+      const out = await liveAnalyzeUser(u);
+      if(out && LIVE.on) showAnalysis(el, null, out);
+    }catch(e){ console.warn('live analysis failed', e); }
+  };
+  setTimeout(tick, 150);
 }
 function liveFlush(){
   LIVE.playing.forEach(s => { try{ s.stop(); }catch(e){} });
@@ -232,13 +307,15 @@ function liveStop(){
   LIVE.on = false; LIVE.ready = false;
   if(LIVE.aiTxt || LIVE.userTxt) liveTurnDone();
   try{ LIVE.proc && LIVE.proc.disconnect(); }catch(e){}
-  try{ LIVE.inCtx && LIVE.inCtx.close(); }catch(e){}
   try{ LIVE.ws && LIVE.ws.close(); }catch(e){}
   if(LIVE.stream) LIVE.stream.getTracks().forEach(t => t.stop());
   liveFlush();
   try{ LIVE.outCtx && LIVE.outCtx.close(); }catch(e){}
   LIVE.stream = LIVE.inCtx = LIVE.proc = LIVE.ws = LIVE.outCtx = null;
+  LIVE.tapOn = false;
   $('#btnLive').classList.remove('on');
+  $('#liveSend').hidden = true;
+  LIVE.talking = false;
   unlockScreen();
   setState('idle');
   if(wasOn) $('#hint').textContent = 'Κλήση τερματίστηκε';

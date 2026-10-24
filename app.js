@@ -823,7 +823,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 $('#mic').onclick = () => {
-  if(typeof LIVE !== 'undefined' && LIVE.on){ liveStop(); return; }
+  if(typeof LIVE !== 'undefined' && LIVE.on){ liveTalk(); return; }
   unlockAudio();
   if(state === 'idle') listen();
   else if(state === 'listening'){ if(recFinish) recFinish(); else { try{ rec.stop(); }catch(e){} } }
