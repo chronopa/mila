@@ -174,7 +174,7 @@ body.live .msg.ai::before{content:'A';position:absolute;left:-46px;top:4px;width
     <button class="side" id="btnType" title="Πληκτρολόγιο">⌨️</button>
   </div>
   <div id="hint">Πάτα το 🎙️ για να ξεκινήσεις</div>
-  <div class="ver">Μίλα · έκδοση v17</div>
+  <div class="ver">Μίλα · έκδοση v21</div>
 </footer>
 
 <div class="sheet" id="setSheet"><div class="card">
@@ -195,7 +195,7 @@ body.live .msg.ai::before{content:'A';position:absolute;left:-46px;top:4px;width
   <label>Προφορά</label>
   <select id="sAccent"><option value="en-US">American (en-US)</option><option value="en-GB">British (en-GB)</option></select>
   <label>Φωνή του AI</label>
-  <select id="sVoiceEng"><option value="browser">Φωνή του iPhone (δωρεάν)</option><option value="openai">Φωνή OpenAI (πιο φυσική, χρεώνεται)</option></select>
+  <select id="sVoiceEng"><option value="browser">Φωνή του iPhone (δωρεάν)</option></select>
   <div id="grpBV"><select id="sVoice" style="margin-top:8px"></select></div>
   <div id="grpOV">
     <select id="sOaVoice" style="margin-top:8px">
@@ -212,7 +212,6 @@ body.live .msg.ai::before{content:'A';position:absolute;left:-46px;top:4px;width
     <option value="browser">Safari / iPhone (δωρεάν)</option>
     <option value="groq">Groq Whisper (δωρεάν, δεν εξαρτάται από το Dictation)</option>
     <option value="gemini">Google Gemini (δωρεάν, μετράει στα όρια αιτημάτων)</option>
-    <option value="openai">OpenAI (χρεώνεται)</option>
   </select>
   <div id="grpSttModel"><select id="sSttModel" style="margin-top:8px">
     <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe — φθηνό</option>
@@ -231,6 +230,9 @@ body.live .msg.ai::before{content:'A';position:absolute;left:-46px;top:4px;width
   <label>Στόχος ημέρας (απαντήσεις)</label>
   <input id="sGoal" type="number" min="3" max="100">
   <div class="chk"><input type="checkbox" id="sHide"><span>Θόλωσε το κείμενο του AI (εξάσκηση ακοής — πάτα για να φανεί)</span></div>
+  <label>Αντίγραφο ρυθμίσεων και κλειδιών</label>
+  <div style="display:flex;gap:10px"><button class="secondary" id="bkCopy" style="flex:1">Αντιγραφή</button><button class="secondary" id="bkRestore" style="flex:1">Επαναφορά</button></div>
+  <textarea id="bkText" rows="3" placeholder="Αντιγραφή: βγαίνει εδώ το κείμενο. Επαναφορά: επικόλλησε εδώ το κείμενο που αντέγραψες και πάτα Επαναφορά." style="width:100%;margin-top:8px;font-size:12px"></textarea>
   <div style="display:flex;gap:10px;margin-top:18px"><button class="primary" id="setSave" style="flex:1">Αποθήκευση</button><button class="secondary" id="setClose">Κλείσιμο</button></div>
 </div></div>
 

@@ -1,4 +1,4 @@
-const CACHE = 'speak-v17';
+const CACHE = 'speak-v21';
 const ASSETS = ['./', './index.html', './app.js', './live.js', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

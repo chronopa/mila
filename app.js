@@ -26,7 +26,7 @@ const PROV = {
     models:[['gpt-6-luna','γρήγορο και φθηνό'],['gpt-6.1-sol','ισορροπημένο'],['gpt-6-astra','το πιο ισχυρό']],
     note:'Χρεώνεται ανά χρήση. Η συνδρομή ChatGPT δεν περιλαμβάνει API. Το key χρησιμοποιείται και για τις φωνές OpenAI.'}
 };
-const PROV_ORDER = ['gemini','groq','mistral','claude','openai'];
+const PROV_ORDER = ['gemini','groq'];          // μόνο Gemini και Groq
 const DEFAULTS = {
   provider:'groq',
   keys:{gemini:'',groq:'',mistral:'',claude:'',openai:''},
@@ -74,7 +74,7 @@ function load(){
     if(s.model && !(s.models && s.models.claude)) st.models.claude = s.model;
     if(s.oaModel && !(s.models && s.models.openai)) st.models.openai = s.oaModel;
     if(s.oaCustom && !st.customs.openai) st.customs.openai = s.oaCustom;
-    if(!PROV[st.provider]) st.provider = 'groq';
+    if(!PROV_ORDER.includes(st.provider)) st.provider = 'groq';
     return {settings:st,
       notebook:d.notebook||[],vocab:d.vocab||[],days:d.days||{},daily:d.daily||null,dict:d.dict||{}};
   }catch(e){

@@ -186,6 +186,7 @@ function liveStartMic(){
       const s = Math.max(-1, Math.min(1, input[Math.floor(i * ratio)]));
       pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
     }
+    if(LIVE.rec) LIVE.rec.push(pcm);
     LIVE.ws.send(JSON.stringify({realtimeInput:{audio:{data: int16ToB64(pcm), mimeType:'audio/pcm;rate=16000'}}}));
   };
   const mute = ctx.createGain(); mute.gain.value = 0;   // να τρέχει ο επεξεργαστής χωρίς ηχώ
@@ -212,9 +213,8 @@ function b64ToInt16(b64){
 function livePlay(inl){
   const ctx = LIVE.outCtx; if(!ctx) return;
   if(ctx.state !== 'running'){ ctx.resume().catch(() => {}); liveNeedTap(); }
-  if(!LIVE.diag){ LIVE.diag = true; toast('Ήχος εξόδου: ' + ctx.state + ' · ' + ctx.sampleRate + ' Hz'); }
   LIVE.turnAudio = true;
-  if(LIVE.relAt){ const ms = Date.now() - LIVE.relAt; LIVE.relAt = 0; toast('Πρώτος ήχος μετά την αποστολή: ' + ms + ' ms'); }
+  LIVE.relAt = 0;
   const m = /rate=(\d+)/.exec(inl.mimeType || '');
   const rate = m ? parseInt(m[1], 10) : 24000;
   LIVE.gotAnyAudio = true;
@@ -249,7 +249,7 @@ function liveTalk(){
   {
     liveTurnDone();                 // κλείνει την τρέχουσα απάντηση του AI αν ακόμα γράφεται
     liveFlush();                    // σταματά τη φωνή του AI αν μιλάει
-    LIVE.talking = true; LIVE.userEl = null; LIVE.userTxt = ''; LIVE.lastIn = 0;
+    LIVE.talking = true; LIVE.userEl = null; LIVE.userTxt = ''; LIVE.lastIn = 0; LIVE.rec = [];
     LIVE.ws.send(JSON.stringify({realtimeInput:{activityStart:{}}}));
     mic.className = 'micbtn listening'; mic.innerHTML = ICON_WAVE;
     $('#liveSend').hidden = false; $('#liveSend').innerHTML = ICON_SEND;
@@ -264,7 +264,7 @@ function liveTyped(text){
   const el = document.createElement('div'); el.className = 'msg me'; el.textContent = text;
   chat.appendChild(el); scrollDown();
   LIVE.ws.send(JSON.stringify({clientContent:{turns:[{role:'user', parts:[{text}]}], turnComplete:true}}));
-  liveAnalyzeUser(text).then(out => { if(out && LIVE.on) showAnalysis(el, null, out); }).catch(e => console.warn('live analysis failed', e));
+  liveAnalyzeUser(text).then(out => { if(out && LIVE.on) showAnalysis(el, null, out); }).catch(e => { console.warn('live analysis failed', e); toast('Οι διορθώσεις απέτυχαν: ' + (e.message || 'άγνωστο σφάλμα')); });
   convo.push({role:'user', content:text});
   const k = todayKey(); DB.days[k] = (DB.days[k] || 0) + 1; save(); renderProgress();
 }
@@ -273,24 +273,35 @@ function liveSendNow(){
   if(!LIVE.talking) return;
   LIVE.talking = false;
   LIVE.ws.send(JSON.stringify({realtimeInput:{activityEnd:{}}})); LIVE.relAt = Date.now();
+  const chunks = LIVE.rec || []; LIVE.rec = null;
   $('#liveSend').hidden = true;
   $('#mic').className = 'micbtn'; $('#mic').innerHTML = ICON_MIC;
   $('#hint').textContent = 'Σε άκουσα…';
-  liveReview();
+  liveReview(chunks);
 }
 $('#liveSend').onclick = liveSendNow;
 // Περιμένει να ολοκληρωθεί η μεταγραφή και δείχνει τις διορθώσεις κάτω από τη φράση σου.
-function liveReview(){
+function liveReview(chunks){
   const t0 = Date.now();
   const tick = async () => {
     const quiet = Date.now() - (LIVE.lastIn || 0) > 700;
     if(!quiet && Date.now() - t0 < 4000) return setTimeout(tick, 150);
-    const u = LIVE.userTxt.trim(), el = LIVE.userEl;
-    if(!u || !el) return;
+    let u = LIVE.userTxt.trim();
+    // Το Groq Whisper γράφει ό,τι είπες, χωρίς να διορθώνει τα λάθη σου όπως κάνει η μεταγραφή του Gemini.
+    if(chunks && chunks.length && DB.settings.keys.groq){
+      try{
+        const t = (await transcribe(pcmWav(chunks), 'groq')).trim();
+        if(t) u = t;
+      }catch(e){ console.warn('groq transcription failed', e); }
+    }
+    if(!u) return;
+    let el = LIVE.userEl;
+    if(!el){ el = document.createElement('div'); el.className = 'msg me'; chat.appendChild(el); LIVE.userEl = el; }
+    el.textContent = u; LIVE.userTxt = u; scrollDown();
     try{
       const out = await liveAnalyzeUser(u);
       if(out && LIVE.on) showAnalysis(el, null, out);
-    }catch(e){ console.warn('live analysis failed', e); }
+    }catch(e){ console.warn('live analysis failed', e); toast('Οι διορθώσεις απέτυχαν: ' + (e.message || 'άγνωστο σφάλμα')); }
   };
   setTimeout(tick, 150);
 }
@@ -325,7 +336,7 @@ function liveStop(){
   liveFlush();
   try{ LIVE.outCtx && LIVE.outCtx.close(); }catch(e){}
   LIVE.stream = LIVE.inCtx = LIVE.proc = LIVE.ws = LIVE.outCtx = null;
-  LIVE.tapOn = false;
+  LIVE.tapOn = false; LIVE.rec = null;
   document.body.classList.remove('session');
   $('#btnLive').classList.remove('on');
   $('#liveSend').hidden = true;
@@ -333,4 +344,42 @@ function liveStop(){
   unlockScreen();
   setState('idle');
   if(wasOn) $('#hint').textContent = 'Κλήση τερματίστηκε';
+}
+
+/* ---------- αντίγραφο ρυθμίσεων και κλειδιών ---------- */
+// Κρατά τα κλειδιά και τις ρυθμίσεις σε ένα κείμενο, ώστε να τα επαναφέρεις αν σβηστούν τα δεδομένα της εφαρμογής.
+$('#bkCopy').onclick = () => {
+  const text = JSON.stringify({app:'mila', v:1, settings:DB.settings});
+  $('#bkText').value = text;
+  $('#bkText').select();
+  try{ navigator.clipboard.writeText(text).then(() => toast('Αντιγράφηκε. Κράτα το κείμενο σε ασφαλές σημείο.')).catch(() => toast('Επίλεξε το κείμενο και αντέγραψέ το.')); }
+  catch(e){ toast('Επίλεξε το κείμενο και αντέγραψέ το.'); }
+};
+$('#bkRestore').onclick = () => {
+  let d;
+  try{ d = JSON.parse($('#bkText').value.trim()); }catch(e){ toast('Το κείμενο δεν είναι έγκυρο αντίγραφο'); return; }
+  if(!d || d.app !== 'mila' || !d.settings){ toast('Το κείμενο δεν είναι αντίγραφο της Μίλα'); return; }
+  const s = d.settings;
+  DB.settings = {...DB.settings, ...s,
+    keys:{...DB.settings.keys, ...(s.keys||{})},
+    models:{...DB.settings.models, ...(s.models||{})},
+    customs:{...DB.settings.customs, ...(s.customs||{})},
+    focus:{...DB.settings.focus, ...(s.focus||{})}};
+  save();
+  toast('Επαναφέρθηκαν οι ρυθμίσεις. Ανανεώνεται η εφαρμογή.');
+  setTimeout(() => location.reload(), 900);
+};
+
+/* ---------- WAV για το Groq Whisper ---------- */
+function pcmWav(chunks){
+  let n = 0; chunks.forEach(c => { n += c.length; });
+  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, str) => { for(let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, n * 2, true);
+  let o = 44;
+  chunks.forEach(c => { for(let i = 0; i < c.length; i++){ v.setInt16(o, c[i], true); o += 2; } });
+  return new Blob([buf], {type:'audio/wav'});
 }
