@@ -824,15 +824,14 @@ document.addEventListener('visibilitychange', () => {
 
 $('#mic').onclick = () => {
   if(typeof LIVE !== 'undefined' && LIVE.on){ liveTalk(); return; }
-  unlockAudio();
-  if(state === 'idle') listen();
-  else if(state === 'listening'){ if(recFinish) recFinish(); else { try{ rec.stop(); }catch(e){} } }
-  else if(state === 'speaking') stopSpeech();
+  if(typeof liveStart === 'function') liveStart();
 };
 $('#btnType').onclick = () => $('#typebox').classList.toggle('on');
 function sendTyped(){
   const v = $('#typeIn').value.trim(); if(!v || state === 'thinking') return;
-  $('#typeIn').value = ''; turn(v);
+  $('#typeIn').value = '';
+  if(typeof LIVE !== 'undefined' && LIVE.on){ liveTyped(v); return; }
+  toast('Πάτα το 🎙️ για να ξεκινήσεις τη συνεδρία');
 }
 $('#typeGo').onclick = sendTyped;
 $('#typeIn').addEventListener('keydown', e => { if(e.key === 'Enter') sendTyped(); });

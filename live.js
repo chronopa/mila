@@ -32,7 +32,7 @@ function liveStart(){
     LIVE.outCtx.resume && LIVE.outCtx.resume();
   }catch(e){ toast('Ο browser δεν υποστηρίζει ήχο: ' + e.message); return; }
   if(chat.querySelector('.empty')) chat.innerHTML = '';
-  document.body.classList.add('live');
+  document.body.classList.add('session');
   LIVE.on = true; LIVE.ready = false; LIVE.retries = 0; LIVE.nextAt = 0; LIVE.turnAudio = false; LIVE.gotAnyAudio = false;
   LIVE.userEl = LIVE.aiEl = null; LIVE.userTxt = LIVE.aiTxt = '';
   $('#btnLive').classList.add('on');
@@ -256,6 +256,18 @@ function liveTalk(){
     $('#hint').textContent = 'Μιλάς… πάτα ➤ για αποστολή';
   }
 }
+// Γραπτό μήνυμα μέσα στη ζωντανή λειτουργία: φυσαλίδα, διορθώσεις και απάντηση φωνής.
+function liveTyped(text){
+  if(!LIVE.on || !LIVE.ready) return;
+  liveTurnDone();
+  liveFlush();
+  const el = document.createElement('div'); el.className = 'msg me'; el.textContent = text;
+  chat.appendChild(el); scrollDown();
+  LIVE.ws.send(JSON.stringify({clientContent:{turns:[{role:'user', parts:[{text}]}], turnComplete:true}}));
+  liveAnalyzeUser(text).then(out => { if(out && LIVE.on) showAnalysis(el, null, out); }).catch(e => console.warn('live analysis failed', e));
+  convo.push({role:'user', content:text});
+  const k = todayKey(); DB.days[k] = (DB.days[k] || 0) + 1; save(); renderProgress();
+}
 // Αποστολή όσων είπες (κουμπί ➤ δίπλα στην κυματομορφή).
 function liveSendNow(){
   if(!LIVE.talking) return;
@@ -314,7 +326,7 @@ function liveStop(){
   try{ LIVE.outCtx && LIVE.outCtx.close(); }catch(e){}
   LIVE.stream = LIVE.inCtx = LIVE.proc = LIVE.ws = LIVE.outCtx = null;
   LIVE.tapOn = false;
-  document.body.classList.remove('live');
+  document.body.classList.remove('session');
   $('#btnLive').classList.remove('on');
   $('#liveSend').hidden = true;
   LIVE.talking = false;

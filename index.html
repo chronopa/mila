@@ -123,6 +123,8 @@ label{display:block;font-weight:600;margin:14px 0 5px;font-size:14px}
 body.live #mic{width:84px!important;height:84px!important;border-radius:26px!important;background:#1a73ff!important;color:#fff!important;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(26,115,255,.35)}
 body.live #mic.listening{background:#ff5f7a!important}
 body.live #mic svg{width:34px;height:34px}
+#btnCall{display:none!important}
+#btnLive{display:none!important}
 body.live #hint{font-size:16px;color:#9aa3c7;margin-top:10px;padding-bottom:6px}
 /* ζωντανή λειτουργία: φυσαλίδες όπως στις εφαρμογές αναφοράς (δικό σου μήνυμα δεξιά, AI αριστερά με αρχικό) */
 body.live .msg.me{background:#5b4fd6!important;color:#fff!important;margin-left:auto!important;border-radius:18px 18px 4px 18px!important;max-width:82%}
@@ -140,7 +142,7 @@ body.live .msg.ai::before{content:'A';position:absolute;left:-46px;top:4px;width
 .keyrow input{margin-top:2px}
 </style>
 </head>
-<body>
+<body class="live">
 <header>
   <h1>Μίλα</h1>
   <span class="chip" id="streak">🔥 0</span>
@@ -171,8 +173,8 @@ body.live .msg.ai::before{content:'A';position:absolute;left:-46px;top:4px;width
     <button class="side" id="liveSend" hidden aria-label="Αποστολή"></button>
     <button class="side" id="btnType" title="Πληκτρολόγιο">⌨️</button>
   </div>
-  <div id="hint"></div>
-  <div class="ver">Μίλα · έκδοση v13</div>
+  <div id="hint">Πάτα το 🎙️ για να ξεκινήσεις</div>
+  <div class="ver">Μίλα · έκδοση v17</div>
 </footer>
 
 <div class="sheet" id="setSheet"><div class="card">
