@@ -1126,10 +1126,9 @@ $('#setSave').onclick = () => {
   if(s.sttEngine !== 'browser' && !s.keys[s.sttEngine]) warn.push('Λείπει το key για την αναγνώριση φωνής (' + s.sttEngine + '), θα χρησιμοποιηθεί το Safari.');
   if(warn.length) toast(warn.join(' '));
 };
-if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = fillVoices;
-
 /* ---------- init ---------- */
 renderProgress(); setState('idle'); emptyState(); paintCall();
 if(!(window.SpeechRecognition || window.webkitSpeechRecognition) && !sttActive()) $('#typebox').classList.add('on');
 if(!hasKey()) setTimeout(openSettings, 400);
 if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = fillVoices;
