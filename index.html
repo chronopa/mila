@@ -131,7 +131,6 @@ body.live .msg.me{background:#5b4fd6!important;color:#fff!important;margin-left:
 body.live .msg.ai{background:#211d3d!important;color:#eef1ff!important;margin-left:48px!important;margin-right:auto!important;border-radius:18px 18px 18px 4px!important;max-width:calc(100% - 96px);position:relative}
 body.live .msg.ai::before{content:'A';position:absolute;left:-46px;top:4px;width:34px;height:34px;border-radius:50%;background:#2d2a5e;color:#8f86ff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:15px}
 .ver{text-align:center;font-size:11px;color:#6b7394;margin-top:6px}
-#grpOV,#grpSttModel{display:none!important}
 #liveSend[hidden]{display:none}
 #liveSend{background:#2d4fd6;border-color:transparent;color:#fff;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;padding:0}
 .wv rect{transform-box:fill-box;transform-origin:center;animation:wv .9s ease-in-out infinite alternate}
@@ -201,19 +200,6 @@ body.live .msg.ai::before{content:'A';position:absolute;left:-46px;top:4px;width
     <option value="Zephyr">Zephyr</option><option value="Puck">Puck</option><option value="Charon">Charon</option><option value="Fenrir">Fenrir</option>
   </select>
   <div class="sub">Η αλλαγή ισχύει από την επόμενη συνεδρία, δηλαδή μετά από νέο πάτημα του μικροφώνου.</div>
-  <div id="oldVoice" style="display:none">
-  <label>Φωνή του AI (παλιά)</label>
-  <select id="sVoiceEng"><option value="browser">Φωνή του iPhone (δωρεάν)</option></select>
-  <div id="grpBV"><select id="sVoice" style="margin-top:8px"></select></div>
-  <div id="grpOV">
-    <select id="sOaVoice" style="margin-top:8px">
-      <option value="marin">marin</option><option value="cedar">cedar</option><option value="coral">coral</option><option value="alloy">alloy</option>
-      <option value="ash">ash</option><option value="ballad">ballad</option><option value="echo">echo</option><option value="fable">fable</option>
-      <option value="nova">nova</option><option value="onyx">onyx</option><option value="sage">sage</option><option value="shimmer">shimmer</option><option value="verse">verse</option>
-    </select>
-    <div class="sub">Η φωνή δημιουργείται από AI και δεν είναι ανθρώπινη. Θέλει OpenAI key.</div>
-  </div>
-  </div>
   <label>Ταχύτητα ομιλίας: <span id="rateVal"></span></label>
   <input id="sRate" type="range" min="0.7" max="1.2" step="0.05">
   <label>Αναγνώριση της φωνής σου</label>
@@ -222,11 +208,6 @@ body.live .msg.ai::before{content:'A';position:absolute;left:-46px;top:4px;width
     <option value="groq">Groq Whisper (δωρεάν, δεν εξαρτάται από το Dictation)</option>
     <option value="gemini">Google Gemini (δωρεάν, μετράει στα όρια αιτημάτων)</option>
   </select>
-  <div id="grpSttModel"><select id="sSttModel" style="margin-top:8px">
-    <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe — φθηνό</option>
-    <option value="gpt-4o-transcribe">gpt-4o-transcribe — πιο ακριβές</option>
-    <option value="whisper-1">whisper-1</option>
-  </select></div>
   <label>Πόση σιωπή σημαίνει «τελείωσα»: <span id="silVal"></span></label>
   <input id="sSil" type="range" min="800" max="2800" step="100">
   <div class="sub">Μικρότερη τιμή = απαντάει πιο γρήγορα, αλλά μπορεί να σε διακόψει όταν σκέφτεσαι.</div>
