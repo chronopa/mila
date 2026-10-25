@@ -37,9 +37,13 @@ function liveStart(){
   LIVE.userEl = LIVE.aiEl = null; LIVE.userTxt = LIVE.aiTxt = '';
   $('#btnLive').classList.add('on');
   $('#hint').textContent = 'Συνδέομαι…';
-  navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}})
+  // Το μικρόφωνο μένει ανοιχτό ανάμεσα στις συνεδρίες, ώστε το iPhone να μη ζητά ξανά άδεια μέσα στο ίδιο άνοιγμα.
+  const alive = LIVE.keep && LIVE.keep.getTracks().some(t => t.readyState === 'live');
+  const micP = alive ? Promise.resolve(LIVE.keep)
+    : navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}).then(s => { LIVE.keep = s; return s; });
+  micP
     .then(stream => {
-      if(!LIVE.on){ stream.getTracks().forEach(t => t.stop()); return; }
+      if(!LIVE.on) return;
       LIVE.stream = stream;
       try{ LIVE.outCtx && LIVE.outCtx.resume().catch(() => {}); }catch(e){}
       liveConnect();
@@ -136,14 +140,14 @@ async function liveTurnDone(){
   LIVE.userEl = LIVE.aiEl = null; LIVE.userTxt = LIVE.aiTxt = ''; LIVE.turnAudio = false;
   // Αν δεν ήρθε ήχος για αυτή την απάντηση, τη διαβάζει η φωνή της συσκευής, ώστε να μην μένει μόνο γραπτή.
   if(a && !gotAudio && LIVE.on && !(LIVE.outCtx && LIVE.outCtx.state === 'running' && LIVE.gotAnyAudio)){
-    toast('Ο ήχος του Gemini δεν ήρθε εδώ, το διαβάζω με τη φωνή της συσκευής');
-    speakBrowser(a, () => {}, []);
+    speakGemini(a, () => {}, []);
   }
   if(aiEl && a){
     aiEl.dataset.text = a;
     aiEl.querySelector('.t').innerHTML = wordify(a);
     if(!aiEl.querySelector('.replay')) aiEl.insertAdjacentHTML('beforeend', '<button class="replay">🔊</button>');
   }
+  if(aiEl && a) liveWords(aiEl, a).catch(e => console.warn('live words failed', e));
   if(!u && !a) return;
   if(u){ convo.push({role:'user', content:u}); }
   if(a){ convo.push({role:'assistant', content:a}); }
@@ -332,10 +336,9 @@ function liveStop(){
   if(LIVE.aiTxt || LIVE.userTxt) liveTurnDone();
   try{ LIVE.proc && LIVE.proc.disconnect(); }catch(e){}
   try{ LIVE.ws && LIVE.ws.close(); }catch(e){}
-  if(LIVE.stream) LIVE.stream.getTracks().forEach(t => t.stop());
   liveFlush();
   try{ LIVE.outCtx && LIVE.outCtx.close(); }catch(e){}
-  LIVE.stream = LIVE.inCtx = LIVE.proc = LIVE.ws = LIVE.outCtx = null;
+  LIVE.inCtx = LIVE.proc = LIVE.ws = LIVE.outCtx = null;
   LIVE.tapOn = false; LIVE.rec = null;
   document.body.classList.remove('session');
   $('#btnLive').classList.remove('on');
@@ -389,3 +392,12 @@ try{
   $('#sLiveVoice').value = DB.settings.liveVoice || 'Kore';
   $('#sLiveVoice').onchange = () => { DB.settings.liveVoice = $('#sLiveVoice').value; save(); toast('Η φωνή αλλάζει από την επόμενη συνεδρία'); };
 }catch(e){}
+
+/* ---------- λέξεις του μαθήματος από την απάντηση του AI ---------- */
+async function liveWords(aiEl, reply){
+  const p = hasKey() ? DB.settings.provider : 'gemini';
+  const content = 'Coach\'s reply: "' + reply + '"';
+  const raw = await callProv(p, DB.settings.keys[p], modelFor(p, true), analysisPrompt(), [{role:'user', content}], 600);
+  const out = parseAnalysis(raw);
+  if(out && out.words && out.words.length && aiEl.isConnected) aiEl.after(buildChips(out.words));
+}

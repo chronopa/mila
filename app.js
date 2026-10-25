@@ -461,11 +461,13 @@ function startSession(o){
     prompt: sc.id === 'custom' ? 'ROLE-PLAY / SCENARIO defined by the learner: ' + (o.custom || 'free conversation') : sc.prompt};
   convo = []; sessionFixes = [];
   chat.innerHTML = ''; showTab('chat');
-  if(!hasKey()){ openSettings(); toast('Βάλε πρώτα το API key'); emptyState(); if(call.active) endCall(); return; }
+  if(call.active) endCall();
   const b = document.createElement('div'); b.className = 'banner';
   b.textContent = sc.icon + ' ' + (sc.id === 'custom' ? (o.custom || 'Δικό σου σενάριο') : sc.title) + (drill ? ' · εστίαση στα λάθη' : '');
   chat.appendChild(b);
-  turn('[START]');
+  // Τα σενάρια ξεκινούν πάντα τη ζωντανή συνεδρία με τη φωνή του Gemini.
+  if(typeof liveStart === 'function'){ if(LIVE.on) liveStop(); liveStart(); }
+  else turn('[START]');
 }
 
 /* ---------- speech out ---------- */
@@ -478,24 +480,45 @@ function unlockAudio(){
 
 function stopSpeech(){
   if(speechEnd) speechEnd();
-  if('speechSynthesis' in window) speechSynthesis.cancel();
+  try{ window.__ttsSrc && window.__ttsSrc.stop(); }catch(e){}
 }
-function enVoices(){ return ('speechSynthesis' in window) ? speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().startsWith('en')) : []; }
 
-function speakBrowser(text, fin, cleanup){
-  if(!('speechSynthesis' in window)){ fin(); return; }
-  speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = DB.settings.accent;
-  const vs = enVoices();
-  const v = vs.find(v => v.voiceURI === DB.settings.voice) || vs.find(v => v.lang.replace('_','-') === DB.settings.accent);
-  if(v) u.voice = v;
-  u.rate = DB.settings.rate;
-  u.onend = fin; u.onerror = fin;
-  const timer = setTimeout(fin, 4000 + text.length*110);
-  cleanup.push(() => clearTimeout(timer));
-  window.__utter = u;               // keep a reference (iOS can drop it otherwise)
-  speechSynthesis.speak(u);
+const TTS_MODEL = 'gemini-3.8-flash-tts';
+// Φωνή Gemini για κάθε απάντηση (μόνο αυτή, χωρίς φωνή iPhone).
+async function speakGemini(text, fin, cleanup){
+  const key = DB.settings.keys.gemini;
+  if(!key){ toast('Βάλε το Gemini key για τη φωνή'); fin(); return; }
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();   // ανοίγει μέσα στο πάτημα, για το iOS
+  ctx.resume && ctx.resume().catch(() => {});
+  cleanup.push(() => { try{ ctx.close(); }catch(e){} });
+  try{
+    const j = await post(GEM + '/models/' + TTS_MODEL + ':generateContent', {'x-goog-api-key':key}, {
+      contents:[{parts:[{text}]}],
+      generationConfig:{responseModalities:['AUDIO'], speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName: DB.settings.liveVoice || 'Kore'}}}}
+    });
+    const part = ((j.candidates || [])[0] || {}).content;
+    const inl = part && part.parts && part.parts.find(p => p.inlineData);
+    if(!inl) throw new Error('Δεν ήρθε ήχος');
+    const bin = atob(inl.inlineData.data), bytes = new Uint8Array(bin.length);
+    for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const mt = inl.inlineData.mimeType || '';
+    let buffer;
+    if(/L16|pcm/i.test(mt)){
+      const rate = parseInt((/rate=(\d+)/.exec(mt) || [])[1], 10) || 24000;
+      const dv = new DataView(bytes.buffer), n = bytes.length >> 1;
+      buffer = ctx.createBuffer(1, n, rate);
+      const ch = buffer.getChannelData(0);
+      for(let i = 0; i < n; i++) ch[i] = dv.getInt16(i * 2, true) / 32768;
+    }else buffer = await ctx.decodeAudioData(bytes.buffer);
+    const src = ctx.createBufferSource(); src.buffer = buffer; src.connect(ctx.destination);
+    window.__ttsSrc = src;
+    src.onended = () => fin();
+    src.start();
+    cleanup.push(() => { try{ src.stop(); }catch(e){} });
+  }catch(e){
+    toast('Η φωνή δεν βγήκε: ' + e.message + hintFor(e.message, 'gemini'));
+    fin();
+  }
 }
 function speak(text){
   stopSpeech();
@@ -510,7 +533,7 @@ function speak(text){
     };
     speechEnd = fin;
     if(state === 'idle' || state === 'speaking') setState('speaking');
-    speakBrowser(text, fin, cleanup);
+    speakGemini(text, fin, cleanup);
   });
 }
 
@@ -1000,11 +1023,6 @@ $('#btnEnd').onclick = async () => {
 $('#sumClose').onclick = () => $('#sumSheet').classList.remove('on');
 
 /* ---------- settings ---------- */
-function fillVoices(){
-  const sel = $('#sVoice'), vs = enVoices();
-  sel.innerHTML = '<option value="">Αυτόματη</option>' + vs.map(v => '<option value="'+esc(v.voiceURI)+'">'+esc(v.name+' ('+v.lang+')')+'</option>').join('');
-  sel.value = DB.settings.voice || '';
-}
 function paintGroups(){
   const show = (id, on) => $(id).style.display = on ? 'block' : 'none';
 }
@@ -1099,18 +1117,16 @@ function openSettings(){
   $('#sLevel').value = s.level;
   $('#sInt').value = s.interests; $('#sAccent').value = s.accent; $('#sExplain').value = s.explain;
   $('#sSttEng').value = s.sttEngine;
-  $('#sRate').value = s.rate; $('#rateVal').textContent = s.rate;
   $('#sSil').value = s.silMs; $('#silVal').textContent = (s.silMs/1000).toFixed(1) + ' s';
   $('#fGrammar').checked = s.focus.grammar; $('#fVocab').checked = s.focus.vocabulary; $('#fNat').checked = s.focus.natural;
   $('#sGoal').value = s.goal; $('#sHide').checked = s.hideAI;
-  fillVoices(); paintGroups();
+  paintGroups();
   $('#setSheet').classList.add('on');
 }
 
 $('#sProv').onchange = () => { stash(); shownProv = $('#sProv').value; paintModels(shownProv); };
 $('#btnSet').onclick = openSettings;
 $('#setClose').onclick = () => $('#setSheet').classList.remove('on');
-$('#sRate').oninput = e => $('#rateVal').textContent = e.target.value;
 $('#sSil').oninput = e => $('#silVal').textContent = (e.target.value/1000).toFixed(1) + ' s';
 $('#setSave').onclick = () => {
   const s = DB.settings;
@@ -1118,9 +1134,9 @@ $('#setSave').onclick = () => {
   s.provider = $('#sProv').value; s.models = {...draft.models}; s.customs = {...draft.customs};
   document.querySelectorAll('#keyRows [data-key]').forEach(i => { s.keys[i.dataset.key] = i.value.trim(); });
   s.level = $('#sLevel').value;
-  s.interests = $('#sInt').value.trim(); s.accent = $('#sAccent').value; s.voice = $('#sVoice').value;
+  s.interests = $('#sInt').value.trim(); s.accent = $('#sAccent').value;
   s.sttEngine = $('#sSttEng').value;
-  s.rate = parseFloat($('#sRate').value); s.silMs = parseInt($('#sSil').value) || 1600; s.explain = $('#sExplain').value;
+  s.silMs = parseInt($('#sSil').value) || 1600; s.explain = $('#sExplain').value;
   s.focus = {grammar:$('#fGrammar').checked,vocabulary:$('#fVocab').checked,natural:$('#fNat').checked};
   s.goal = Math.max(3, parseInt($('#sGoal').value) || 15); s.hideAI = $('#sHide').checked;
   ttsWarned = false;
@@ -1130,7 +1146,6 @@ $('#setSave').onclick = () => {
   if(s.sttEngine !== 'browser' && !s.keys[s.sttEngine]) warn.push('Λείπει το key για την αναγνώριση φωνής (' + s.sttEngine + '), θα χρησιμοποιηθεί το Safari.');
   if(warn.length) toast(warn.join(' '));
 };
-if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = fillVoices;
 
 /* ---------- init ---------- */
 renderProgress(); setState('idle'); emptyState(); paintCall();
