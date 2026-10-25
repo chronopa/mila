@@ -1,14 +1,28 @@
-// Network-only service worker: do not cache app files or API responses.
-self.addEventListener('install', event => {
-  event.waitUntil(self.skipWaiting());
+const CACHE = 'speak-v31';
+const ASSETS = ['./', './index.html', './app.js', './live.js', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
 
-self.addEventListener('activate', event => {
-  event.waitUntil((async () => {
-    const names = await caches.keys();
-    await Promise.all(names.map(name => caches.delete(name)));
-    await self.clients.claim();
-  })());
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
 });
 
-// No fetch handler: all requests go directly to the network.
+// Stale-while-revalidate for our own files only; API calls are never touched.
+self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  e.respondWith(
+    caches.match(e.request).then(hit => {
+      const net = fetch(e.request).then(res => {
+        if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
+        return res;
+      }).catch(() => hit);
+      return hit || net;
+    })
+  );
+});

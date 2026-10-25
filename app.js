@@ -3,6 +3,7 @@ const $ = s => document.querySelector(s);
 const KEY = 'speak.v1';
 const DAY = 864e5, HOUR = 36e5;
 const STEPS = [1, 3, 7, 14, 30, 60];          // spaced-repetition intervals (days)
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
 const GEM = 'https://generativelanguage.googleapis.com/v1beta';
 const GROQ = 'https://api.groq.com/openai/v1';
 const PROV = {
@@ -43,6 +44,8 @@ const DIFF = {
   hard:'DIFFICULTY hard: speak at natural native pace with idioms and phrasal verbs, ask challenging follow-up questions, and also flag subtle naturalness issues.'
 };
 const DICT_SYS = 'You are an English-Greek dictionary for an intermediate learner. Given a word and the sentence it appeared in, reply ONLY with JSON: {"base":"dictionary form","pos":"part of speech","el":"Greek meaning in this context, max 6 words","example":"one short natural English example sentence","example_el":"Greek translation of the example"}';
+const TTS_INSTR = 'Speak like a friendly, natural native English speaker in a relaxed conversation: warm tone, natural rhythm and intonation, clear articulation suited to an intermediate learner.';
+const OA_VOICES = ['marin','cedar','coral','alloy','ash','ballad','echo','fable','nova','onyx','sage','shimmer','verse'];
 
 function load(){
   try{
@@ -76,6 +79,7 @@ let rec = null, silTimer = null;
 let drill = false, scn = null, lastOpts = null;
 const call = {active:false};
 let listenTok = 0, recCancel = null, recFinish = null, micStream = null, actx = null, wake = null;
+const audioEl = new Audio(); audioEl.playsInline = true;
 
 const HINTS = {
   idle:'Πάτα το μικρόφωνο και μίλα',
@@ -94,7 +98,7 @@ function setState(s){
   const cls = 'micbtn ' + (s==='idle' ? '' : s);
   const ico = s==='listening' ? '⏹' : s==='speaking' ? '🔊' : s==='thinking' ? '…' : '🎙️';
   ['#mic','#rvMic'].forEach(id => { const m = $(id); if(m){ m.className = cls; m.textContent = ico; } });
-  $('#hint').textContent = call.active ? CALLHINTS[s] : HINTS[s];
+  $('#hint').textContent = (call.active ? CALLHINTS[s] : HINTS[s]);
 }
 function toast(msg, good){
   const t = $('#toast'); t.textContent = msg; t.className = good ? 'good' : ''; t.style.display = 'block';
@@ -168,7 +172,7 @@ async function post(url, headers, body){
 }
 const stripThink = t => String(t || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 
-// Groq uses the OpenAI chat-completions format
+// Groq speaks the OpenAI chat-completions format
 async function chatCompat(url, key, body){
   const j = await post(url,{authorization:'Bearer '+key}, body);
   const c = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
@@ -205,12 +209,9 @@ function geminiCall(key, model, system, messages, max){
 }
 function callProv(p, key, model, system, messages, max){
   if(p === 'gemini') return geminiCall(key, model, system, messages, max);
-  if(p === 'groq'){
-    const oss = /gpt-oss/.test(model);
-    return chatCompat(GROQ + '/chat/completions', key, {model, messages:withSystem(system, messages),
-      max_completion_tokens:(max||700) + (oss ? 800 : 0), ...(oss ? {reasoning_effort:'low'} : {})});
-  }
-  throw new Error('Άγνωστος πάροχος: ' + p);
+  const oss = /gpt-oss/.test(model);
+  return chatCompat(GROQ + '/chat/completions', key, {model, messages:withSystem(system, messages),
+    max_completion_tokens:(max||700) + (oss ? 800 : 0), ...(oss ? {reasoning_effort:'low'} : {})});
 }
 function hintFor(m, p){
   m = String(m || ''); p = p || DB.settings.provider;
@@ -468,8 +469,9 @@ function startSession(o){
 }
 
 /* ---------- speech out ---------- */
-let speechEnd = null;
+let speechEnd = null, ttsWarned = false;
 function unlockAudio(){
+  try{ audioEl.src = SILENT_WAV; audioEl.play().catch(() => {}); }catch(e){}
   try{ if(!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); }catch(e){}
 }
 ['click','touchend'].forEach(ev => document.addEventListener(ev, unlockAudio, {once:true, passive:true}));
@@ -525,7 +527,7 @@ function listen(handler){
   handler = handler || turn;
   if(!hasKey()){ openSettings(); toast('Βάλε πρώτα το API key'); if(call.active) endCall(); return; }
   if(sttActive()){
-    if(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) return listenRecorded(handler);
+    if(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) return listenOA(handler);
     toast('Η εγγραφή ήχου δεν υποστηρίζεται εδώ — χρησιμοποιώ την αναγνώριση του Safari.');
   }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -561,7 +563,7 @@ function listen(handler){
   catch(e){ clearInterval(silTimer); toast(e.message); setState('idle'); }
 }
 
-/* --- Recorded audio transcription path: Groq / Gemini --- */
+/* --- recorded transcription path (Groq / Gemini): own recorder + silence detection --- */
 async function getMic(){
   if(micStream && micStream.getTracks().every(t => t.readyState === 'live')) return micStream;
   try{
@@ -617,6 +619,7 @@ function recordOnce(stream){
     mr.start();
   });
 }
+const STT_PROMPT = 'Transcribe exactly what the speaker says, including any grammar mistakes. Do not correct or rephrase.';
 function encodeWav(samples, rate){
   const buf = new ArrayBuffer(44 + samples.length * 2), v = new DataView(buf);
   const w = (o, s) => { for(let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
@@ -675,15 +678,15 @@ async function transcribe(blob, engine){
   fd.append('model', model);
   fd.append('language', 'en');
   const r = await fetch(GROQ + '/audio/transcriptions',{
-    method:'POST', headers:{authorization:'Bearer '+DB.settings.keys[engine]}, body:fd
+    method:'POST', headers:{authorization:'Bearer '+DB.settings.keys.groq}, body:fd
   });
   if(!r.ok) throw await errFrom(r);
   let text = ((await r.json()).text || '').trim();
   // Whisper tends to invent these on near-silence
-  if(/whisper/.test(model) && /^(thank you[.!]?|thanks for watching[.!]?|bye[.!]?|you)$/i.test(text)) text = '';
+  if(/^(thank you[.!]?|thanks for watching[.!]?|bye[.!]?|you)$/i.test(text)) text = '';
   return text;
 }
-async function listenRecorded(handler){
+async function listenOA(handler){
   abortListen(); stopSpeech();
   const my = listenTok;
   setState('listening');
@@ -1003,7 +1006,7 @@ function fillVoices(){
   sel.value = DB.settings.voice || '';
 }
 function paintGroups(){
-  // Speech output uses the device's available voices; no provider settings are needed.
+  const show = (id, on) => $(id).style.display = on ? 'block' : 'none';
 }
 let draft = null, shownProv = null, modelLists = {};
 function stash(){
@@ -1103,7 +1106,7 @@ function openSettings(){
   fillVoices(); paintGroups();
   $('#setSheet').classList.add('on');
 }
-$('#sSttEng').onchange = paintGroups;
+
 $('#sProv').onchange = () => { stash(); shownProv = $('#sProv').value; paintModels(shownProv); };
 $('#btnSet').onclick = openSettings;
 $('#setClose').onclick = () => $('#setSheet').classList.remove('on');
@@ -1120,15 +1123,17 @@ $('#setSave').onclick = () => {
   s.rate = parseFloat($('#sRate').value); s.silMs = parseInt($('#sSil').value) || 1600; s.explain = $('#sExplain').value;
   s.focus = {grammar:$('#fGrammar').checked,vocabulary:$('#fVocab').checked,natural:$('#fNat').checked};
   s.goal = Math.max(3, parseInt($('#sGoal').value) || 15); s.hideAI = $('#sHide').checked;
+  ttsWarned = false;
   save(); renderProgress(); refreshEmpty(); setState(state); $('#setSheet').classList.remove('on');
   const warn = [];
   if(!s.keys[s.provider]) warn.push('Λείπει το key του ' + PROV[s.provider].name + '.');
   if(s.sttEngine !== 'browser' && !s.keys[s.sttEngine]) warn.push('Λείπει το key για την αναγνώριση φωνής (' + s.sttEngine + '), θα χρησιμοποιηθεί το Safari.');
   if(warn.length) toast(warn.join(' '));
 };
+if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = fillVoices;
+
 /* ---------- init ---------- */
 renderProgress(); setState('idle'); emptyState(); paintCall();
 if(!(window.SpeechRecognition || window.webkitSpeechRecognition) && !sttActive()) $('#typebox').classList.add('on');
 if(!hasKey()) setTimeout(openSettings, 400);
 if('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
-if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = fillVoices;
