@@ -291,13 +291,6 @@ function liveReview(chunks){
     const quiet = Date.now() - (LIVE.lastIn || 0) > 700;
     if(!quiet && Date.now() - t0 < 4000) return setTimeout(tick, 150);
     let u = LIVE.userTxt.trim();
-    // Το Groq Whisper γράφει ό,τι είπες, χωρίς να διορθώνει τα λάθη σου όπως κάνει η μεταγραφή του Gemini.
-    if(chunks && chunks.length && DB.settings.keys.groq){
-      try{
-        const t = (await transcribe(pcmWav(chunks), 'groq')).trim();
-        if(t) u = t;
-      }catch(e){ console.warn('groq transcription failed', e); }
-    }
     if(!u) return;
     let el = LIVE.userEl;
     if(!el){ el = document.createElement('div'); el.className = 'msg me'; chat.appendChild(el); LIVE.userEl = el; }
@@ -373,31 +366,3 @@ $('#bkRestore').onclick = () => {
   setTimeout(() => location.reload(), 900);
 };
 
-/* ---------- WAV για το Groq Whisper ---------- */
-function pcmWav(chunks){
-  let n = 0; chunks.forEach(c => { n += c.length; });
-  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
-  const w = (o, str) => { for(let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
-  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
-  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-  v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-  w(36, 'data'); v.setUint32(40, n * 2, true);
-  let o = 44;
-  chunks.forEach(c => { for(let i = 0; i < c.length; i++){ v.setInt16(o, c[i], true); o += 2; } });
-  return new Blob([buf], {type:'audio/wav'});
-}
-
-/* ---------- επιλογή φωνής ---------- */
-try{
-  $('#sLiveVoice').value = DB.settings.liveVoice || 'Kore';
-  $('#sLiveVoice').onchange = () => { DB.settings.liveVoice = $('#sLiveVoice').value; save(); toast('Η φωνή αλλάζει από την επόμενη συνεδρία'); };
-}catch(e){}
-
-/* ---------- λέξεις του μαθήματος από την απάντηση του AI ---------- */
-async function liveWords(aiEl, reply){
-  const p = hasKey() ? DB.settings.provider : 'gemini';
-  const content = 'Coach\'s reply: "' + reply + '"';
-  const raw = await callProv(p, DB.settings.keys[p], modelFor(p, true), analysisPrompt(), [{role:'user', content}], 600);
-  const out = parseAnalysis(raw);
-  if(out && out.words && out.words.length && aiEl.isConnected) aiEl.after(buildChips(out.words));
-}

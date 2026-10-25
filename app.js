@@ -5,22 +5,18 @@ const DAY = 864e5, HOUR = 36e5;
 const STEPS = [1, 3, 7, 14, 30, 60];          // spaced-repetition intervals (days)
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
 const GEM = 'https://generativelanguage.googleapis.com/v1beta';
-const GROQ = 'https://api.groq.com/openai/v1';
 const PROV = {
   gemini:{name:'Google Gemini', free:true, ph:'AIza…', keyHelp:'aistudio.google.com/apikey',
     models:[['gemini-3.5-flash-lite','γρήγορο'],['gemini-3.8-flash','πιο έξυπνο'],['gemini-3.1-flash-lite','οικονομικό']],
-    note:'Δωρεάν με λογαριασμό Google. Προσοχή: οι όροι της Google για εφαρμογές που προσφέρονται σε χρήστες στον Ευρωπαϊκό Οικονομικό Χώρο (η Ελλάδα ανήκει σε αυτόν) μπορεί να απαιτούν πληρωμένο πλάνο, και στο δωρεάν πλάνο τα δεδομένα χρησιμοποιούνται για βελτίωση των προϊόντων της Google.'},
-  groq:{name:'Groq', free:true, ph:'gsk_…', keyHelp:'console.groq.com/keys',
-    models:[['qwen/qwen3.8-27b','γρήγορο'],['openai/gpt-oss-120b','πιο έξυπνο'],['openai/gpt-oss-20b','μικρό']],
-    note:'Δωρεάν και πολύ γρήγορο, με ανοιχτά μοντέλα. Δίνει και δωρεάν αναγνώριση φωνής (Whisper). Τα όρια ανά ημέρα φαίνονται στο console.groq.com/settings/limits.'}
+    note:'Δωρεάν με λογαριασμό Google. Προσοχή: οι όροι της Google για εφαρμογές που προσφέρονται σε χρήστες στον Ευρωπαϊκό Οικονομικό Χώρο (η Ελλάδα ανήκει σε αυτόν) μπορεί να απαιτούν πληρωμένο πλάνο, και στο δωρεάν πλάνο τα δεδομένα χρησιμοποιούνται για βελτίωση των προϊόντων της Google.'}
 };
-const PROV_ORDER = ['gemini','groq'];
+const PROV_ORDER = ['gemini'];
 const DEFAULTS = {
-  provider:'groq',
-  keys:{gemini:'',groq:''},
-  models:{gemini:'gemini-3.5-flash-lite',groq:'qwen/qwen3.8-27b'},
-  customs:{gemini:'',groq:''},
-  sttEngine:'browser', silMs:1600,
+  provider:'gemini',
+  keys:{gemini:''},
+  models:{gemini:'gemini-3.5-flash-lite'},
+  customs:{gemini:''},
+  sttEngine:'gemini', silMs:1600,
   level:'B2', interests:'', accent:'en-US', explain:'el', voice:'', rate:1,
   hideAI:false, goal:15, difficulty:'normal', focus:{grammar:true,vocabulary:true,natural:true}
 };
@@ -56,7 +52,7 @@ function load(){
       keys:{...DEFAULTS.keys,...(s.keys||{})},
       models:{...DEFAULTS.models,...(s.models||{})},
       customs:{...DEFAULTS.customs,...(s.customs||{})}};
-    if(!PROV_ORDER.includes(st.provider)) st.provider = 'groq';
+    if(!PROV_ORDER.includes(st.provider)) st.provider = 'gemini';
     return {settings:st,
       notebook:d.notebook||[],vocab:d.vocab||[],days:d.days||{},daily:d.daily||null,dict:d.dict||{}};
   }catch(e){
@@ -69,7 +65,7 @@ function save(){ try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){}
 
 /* ---------- helpers: keys / engines ---------- */
 const hasKey = () => !!DB.settings.keys[DB.settings.provider];
-const sttActive = () => { const e = DB.settings.sttEngine; return e !== 'browser' && !!DB.settings.keys[e]; };
+const sttActive = () => true;     // η αναγνώριση γίνεται πάντα με το Gemini
 
 /* ---------- state ---------- */
 let convo = [];            // [{role,content}]
@@ -138,7 +134,7 @@ function srs(it, ok){
 const dueNotes = () => DB.notebook.filter(c => (c.due||0) <= Date.now());
 const dueVocab = () => DB.vocab.filter(v => (v.due||0) <= Date.now());
 
-/* ---------- LLM (Gemini / Groq) ---------- */
+/* ---------- LLM (Gemini) ---------- */
 function modelFor(p, fast){
   const s = DB.settings;
   return s.customs[p] || s.models[p] || PROV[p].models[0][0];
@@ -172,14 +168,6 @@ async function post(url, headers, body){
 }
 const stripThink = t => String(t || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 
-// Groq speaks the OpenAI chat-completions format
-async function chatCompat(url, key, body){
-  const j = await post(url,{authorization:'Bearer '+key}, body);
-  const c = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
-  const t = stripThink(Array.isArray(c) ? c.filter(x => !x.type || x.type === 'text').map(x => x.text || '').join('') : c);
-  if(!t) throw new Error('Άδεια απάντηση');
-  return t;
-}
 const withSystem = (system, messages) => [{role:'system',content:system}, ...messages.map(m => ({role:m.role,content:m.content}))];
 
 let gemThink = true;      // switched off automatically if the model rejects thinkingConfig
@@ -208,10 +196,7 @@ function geminiCall(key, model, system, messages, max){
   }, max);
 }
 function callProv(p, key, model, system, messages, max){
-  if(p === 'gemini') return geminiCall(key, model, system, messages, max);
-  const oss = /gpt-oss/.test(model);
-  return chatCompat(GROQ + '/chat/completions', key, {model, messages:withSystem(system, messages),
-    max_completion_tokens:(max||700) + (oss ? 800 : 0), ...(oss ? {reasoning_effort:'low'} : {})});
+  return geminiCall(key, model, system, messages, max);
 }
 function hintFor(m, p){
   m = String(m || ''); p = p || DB.settings.provider;
@@ -586,7 +571,7 @@ function listen(handler){
   catch(e){ clearInterval(silTimer); toast(e.message); setState('idle'); }
 }
 
-/* --- recorded transcription path (Groq / Gemini): own recorder + silence detection --- */
+/* --- recorded transcription path (Gemini): own recorder + silence detection --- */
 async function getMic(){
   if(micStream && micStream.getTracks().every(t => t.readyState === 'live')) return micStream;
   try{
@@ -691,24 +676,7 @@ async function transcribeGemini(blob){
     throw e;
   }
 }
-async function transcribe(blob, engine){
-  if(engine === 'gemini') return transcribeGemini(blob);
-  const model = 'whisper-large-v3-turbo';
-  const t = blob.type || 'audio/mp4';
-  const ext = t.includes('webm') ? 'webm' : t.includes('wav') ? 'wav' : 'mp4';
-  const fd = new FormData();
-  fd.append('file', new File([blob], 'speech.' + ext, {type:t}));
-  fd.append('model', model);
-  fd.append('language', 'en');
-  const r = await fetch(GROQ + '/audio/transcriptions',{
-    method:'POST', headers:{authorization:'Bearer '+DB.settings.keys.groq}, body:fd
-  });
-  if(!r.ok) throw await errFrom(r);
-  let text = ((await r.json()).text || '').trim();
-  // Whisper tends to invent these on near-silence
-  if(/^(thank you[.!]?|thanks for watching[.!]?|bye[.!]?|you)$/i.test(text)) text = '';
-  return text;
-}
+async function transcribe(blob){ return transcribeGemini(blob); }
 async function listenOA(handler){
   abortListen(); stopSpeech();
   const my = listenTok;
@@ -726,9 +694,9 @@ async function listenOA(handler){
       }
       setState('thinking'); setLive('Μεταγραφή…');
       let text = '';
-      try{ text = await transcribe(r.blob, DB.settings.sttEngine); }
+      try{ text = await transcribe(r.blob); }
       catch(e){
-        setLive(''); setState('idle'); toast('Σφάλμα μεταγραφής: ' + e.message + hintFor(e.message, DB.settings.sttEngine));
+        setLive(''); setState('idle'); toast('Σφάλμα μεταγραφής: ' + e.message + hintFor(e.message, 'gemini'));
         if(call.active){ if(/^40[13]/.test(e.message)) endCall(); else relisten(800); }
         return;
       }
@@ -1074,10 +1042,6 @@ async function listModels(p, key){
       /^models\/gemini-/.test(m.name) && !/(tts|image|live|audio|embedding|robotics|computer-use|native|-exp)/.test(m.name))
       .map(m => m.name.replace('models/', '')));
   }
-  if(p === 'groq'){
-    const j = await get(GROQ + '/models',{authorization:'Bearer '+key});
-    return sortPref(p, (j.data || []).map(x => x.id).filter(id => !/(whisper|orpheus|guard|safeguard|tts)/.test(id)));
-  }
   return null;
 }
 async function testKey(p, key, out){
@@ -1116,7 +1080,6 @@ function openSettings(){
   buildKeyRows();
   $('#sLevel').value = s.level;
   $('#sInt').value = s.interests; $('#sAccent').value = s.accent; $('#sExplain').value = s.explain;
-  $('#sSttEng').value = s.sttEngine;
   $('#sSil').value = s.silMs; $('#silVal').textContent = (s.silMs/1000).toFixed(1) + ' s';
   $('#fGrammar').checked = s.focus.grammar; $('#fVocab').checked = s.focus.vocabulary; $('#fNat').checked = s.focus.natural;
   $('#sGoal').value = s.goal; $('#sHide').checked = s.hideAI;
@@ -1135,7 +1098,6 @@ $('#setSave').onclick = () => {
   document.querySelectorAll('#keyRows [data-key]').forEach(i => { s.keys[i.dataset.key] = i.value.trim(); });
   s.level = $('#sLevel').value;
   s.interests = $('#sInt').value.trim(); s.accent = $('#sAccent').value;
-  s.sttEngine = $('#sSttEng').value;
   s.silMs = parseInt($('#sSil').value) || 1600; s.explain = $('#sExplain').value;
   s.focus = {grammar:$('#fGrammar').checked,vocabulary:$('#fVocab').checked,natural:$('#fNat').checked};
   s.goal = Math.max(3, parseInt($('#sGoal').value) || 15); s.hideAI = $('#sHide').checked;
@@ -1143,7 +1105,6 @@ $('#setSave').onclick = () => {
   save(); renderProgress(); refreshEmpty(); setState(state); $('#setSheet').classList.remove('on');
   const warn = [];
   if(!s.keys[s.provider]) warn.push('Λείπει το key του ' + PROV[s.provider].name + '.');
-  if(s.sttEngine !== 'browser' && !s.keys[s.sttEngine]) warn.push('Λείπει το key για την αναγνώριση φωνής (' + s.sttEngine + '), θα χρησιμοποιηθεί το Safari.');
   if(warn.length) toast(warn.join(' '));
 };
 
