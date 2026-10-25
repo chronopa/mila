@@ -134,12 +134,15 @@ function liveAI(t){
 
 async function liveTurnDone(){
   if(LIVE.talking) return;
-  const u = LIVE.userTxt.trim(), a = LIVE.aiTxt.trim();
-  const userEl = LIVE.userEl, aiEl = LIVE.aiEl;
+  // Όσο ελέγχεται η φράση σου (pendingUser), δεν την καθαρίζουμε· την καθαρίζει η liveReview.
+  const pending = !!LIVE.pendingUser;
+  const a = LIVE.aiTxt.trim();
+  const aiEl = LIVE.aiEl;
   const gotAudio = LIVE.turnAudio;
-  LIVE.userEl = LIVE.aiEl = null; LIVE.userTxt = LIVE.aiTxt = ''; LIVE.turnAudio = false;
-  // Αν δεν ήρθε ήχος για αυτή την απάντηση, τη διαβάζει η φωνή της συσκευής, ώστε να μην μένει μόνο γραπτή.
-  if(a && !gotAudio && LIVE.on && !(LIVE.outCtx && LIVE.outCtx.state === 'running' && LIVE.gotAnyAudio)){
+  LIVE.aiEl = null; LIVE.aiTxt = ''; LIVE.turnAudio = false;
+  if(!pending){ LIVE.userEl = null; LIVE.userTxt = ''; }
+  // Αν δεν ήρθε ήχος για αυτή την απάντηση, τη διαβάζει η φωνή του Gemini.
+  if(a && !gotAudio && LIVE.on){
     speakGemini(a, () => {}, []);
   }
   if(aiEl && a){
@@ -147,14 +150,10 @@ async function liveTurnDone(){
     aiEl.querySelector('.t').innerHTML = wordify(a);
     if(!aiEl.querySelector('.replay')) aiEl.insertAdjacentHTML('beforeend', '<button class="replay">🔊</button>');
   }
-  if(aiEl && a) liveWords(aiEl, a).catch(e => console.warn('live words failed', e));
-  if(!u && !a) return;
-  if(u){ convo.push({role:'user', content:u}); }
-  if(a){ convo.push({role:'assistant', content:a}); }
-  if(u){
-    const k = todayKey(), before = DB.days[k] || 0;
-    DB.days[k] = before + 1; save(); renderProgress();
-  }
+  if(!a) return;
+  convo.push({role:'assistant', content:a});
+  archiveConvo();
+  if(aiEl) liveWords(aiEl, a).catch(e => { console.warn('live words failed', e); toast('Οι λέξεις δεν βγήκαν: ' + (e.message || 'άγνωστο σφάλμα')); });
 }
 
 // Διορθώσεις μόνο της φράσης σου (τρέχει ενώ απαντά το AI).
@@ -281,6 +280,7 @@ function liveSendNow(){
   $('#liveSend').hidden = true;
   $('#mic').className = 'micbtn'; $('#mic').innerHTML = ICON_MIC;
   $('#hint').textContent = 'Σε άκουσα…';
+  LIVE.pendingUser = true;
   liveReview(chunks);
 }
 $('#liveSend').onclick = liveSendNow;
@@ -288,16 +288,22 @@ $('#liveSend').onclick = liveSendNow;
 function liveReview(chunks){
   const t0 = Date.now();
   const tick = async () => {
+    // Περιμένει να φανεί η μεταγραφή και να σταματήσει, ή μέχρι 4 δευτερόλεπτα.
     const quiet = Date.now() - (LIVE.lastIn || 0) > 700;
-    if(!quiet && Date.now() - t0 < 4000) return setTimeout(tick, 150);
-    let u = LIVE.userTxt.trim();
-    if(!u) return;
+    if(!(LIVE.userTxt.trim() && quiet) && Date.now() - t0 < 4000) return setTimeout(tick, 150);
+    const u = LIVE.userTxt.trim();
     let el = LIVE.userEl;
-    if(!el){ el = document.createElement('div'); el.className = 'msg me'; chat.appendChild(el); LIVE.userEl = el; }
-    el.textContent = u; LIVE.userTxt = u; scrollDown();
+    LIVE.userEl = null; LIVE.userTxt = ''; LIVE.pendingUser = false;
+    if(!u){ if(el && !el.textContent) el.remove(); return; }
+    if(!el){ el = document.createElement('div'); el.className = 'msg me'; chat.appendChild(el); }
+    el.textContent = u; scrollDown();
+    convo.push({role:'user', content:u});
+    const k = todayKey(); DB.days[k] = (DB.days[k] || 0) + 1; save(); renderProgress();
+    archiveConvo();
     try{
       const out = await liveAnalyzeUser(u);
-      if(out && LIVE.on) showAnalysis(el, null, out);
+      if(out) showAnalysis(el, null, out);
+      else toast('Δεν βγήκε ανάλυση, δοκίμασε ξανά.');
     }catch(e){ console.warn('live analysis failed', e); toast('Οι διορθώσεις απέτυχαν: ' + (e.message || 'άγνωστο σφάλμα')); }
   };
   setTimeout(tick, 150);
@@ -366,3 +372,12 @@ $('#bkRestore').onclick = () => {
   setTimeout(() => location.reload(), 900);
 };
 
+
+// Λέξεις από την απάντηση του AI (ξεχωριστή εντολή, ώστε να μη μπερδεύεται με τα λάθη σου).
+async function liveWords(aiEl, reply){
+  const sys = 'You pick vocabulary for an English learner at CEFR ' + DB.settings.level + '. From the English text the user sends, choose up to 2 useful words or expressions the learner may not know. Reply ONLY with JSON: {"new_words":[{"phrase":"...","el":"short Greek meaning","example":"short example sentence"}]}. If nothing is worth learning, reply {"new_words":[]}.';
+  const raw = await callProv('gemini', DB.settings.keys.gemini, modelFor('gemini', true), sys, [{role:'user', content: reply}], 400);
+  const j = extract(raw, '{', '}');
+  const words = (j && Array.isArray(j.new_words) ? j.new_words : []).filter(w => w && w.phrase && w.el).slice(0, 2);
+  if(words.length && aiEl.isConnected) aiEl.after(buildChips(words));
+}

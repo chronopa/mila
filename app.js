@@ -54,10 +54,10 @@ function load(){
       customs:{...DEFAULTS.customs,...(s.customs||{})}};
     if(!PROV_ORDER.includes(st.provider)) st.provider = 'gemini';
     return {settings:st,
-      notebook:d.notebook||[],vocab:d.vocab||[],days:d.days||{},daily:d.daily||null,dict:d.dict||{}};
+      notebook:d.notebook||[],vocab:d.vocab||[],days:d.days||{},daily:d.daily||null,dict:d.dict||{},sessions:d.sessions||[]};
   }catch(e){
     return {settings:{...DEFAULTS,focus:{...DEFAULTS.focus},keys:{...DEFAULTS.keys},models:{...DEFAULTS.models},customs:{...DEFAULTS.customs}},
-      notebook:[],vocab:[],days:{},daily:null,dict:{}};
+      notebook:[],vocab:[],days:{},daily:null,dict:{},sessions:[]};
   }
 }
 let DB = load();
@@ -70,6 +70,7 @@ const sttActive = () => true;     // η αναγνώριση γίνεται πά
 /* ---------- state ---------- */
 let convo = [];            // [{role,content}]
 let sessionFixes = [];
+let sessionId = Date.now();  // αναγνωριστικό της τρέχουσας συνομιλίας
 let state = 'idle';        // idle | listening | thinking | speaking
 let rec = null, silTimer = null;
 let drill = false, scn = null, lastOpts = null;
@@ -436,15 +437,38 @@ function showAnalysis(userEl, aiEl, out){
   save(); scrollDown();
 }
 
+// Αποθηκεύει τη συνομιλία που τρέχει (ή ενημερώνει την ήδη αποθηκευμένη).
+function archiveConvo(){
+  if(!convo.length) return;
+  DB.sessions = DB.sessions || [];
+  const item = {id: sessionId, ts: sessionId, title: (scn && scn.title) || 'Συνομιλία', msgs: convo.slice()};
+  const i = DB.sessions.findIndex(s => s.id === sessionId);
+  if(i >= 0) DB.sessions[i] = item; else DB.sessions.push(item);
+  if(DB.sessions.length > 30) DB.sessions = DB.sessions.slice(-30);
+  save();
+}
+function renderSessions(){
+  const v = $('#sessions');
+  const list = (DB.sessions || []).slice().reverse();
+  if(!list.length){ v.innerHTML = '<div class="empty"><h2>Καμία συνομιλία ακόμα</h2><p>Όταν μιλάς με το AI, η συνομιλία αποθηκεύεται εδώ.</p></div>'; return; }
+  v.innerHTML = list.map(s => {
+    const d = new Date(s.ts).toLocaleString('el-GR', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+    const cur = s.id === sessionId ? ' · τρέχουσα' : '';
+    return '<details class="nb"><summary><b>'+esc(s.title)+'</b> <span class="sub">'+esc(d)+' · '+s.msgs.length+' μηνύματα'+cur+'</span></summary>'+
+      s.msgs.map(m => '<div class="sub"><b>'+(m.role==='user'?'Εσύ':'AI')+':</b> '+esc(m.content)+'</div>').join('')+'</details>';
+  }).join('');
+}
+
 function startSession(o){
   o = o || {};
+  archiveConvo();                 // σώζει την προηγούμενη συνομιλία πριν αλλάξει το θέμα
   lastOpts = o;
   stopSpeech(); abortListen(); setState('idle');
   drill = !!o.drill;
   const sc = SCENARIOS.find(s => s.id === (o.scenarioId || 'free')) || SCENARIOS[0];
   scn = {id:sc.id,title:sc.title,
     prompt: sc.id === 'custom' ? 'ROLE-PLAY / SCENARIO defined by the learner: ' + (o.custom || 'free conversation') : sc.prompt};
-  convo = []; sessionFixes = [];
+  convo = []; sessionFixes = []; sessionId = Date.now();
   chat.innerHTML = ''; showTab('chat');
   if(call.active) endCall();
   const b = document.createElement('div'); b.className = 'banner';
@@ -968,9 +992,10 @@ function renderVocab(){
 }
 function showTab(t){
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  ['chat','notes','vocab'].forEach(id => $('#'+id).classList.toggle('on', id === t));
+  ['chat','notes','vocab','sessions'].forEach(id => $('#'+id).classList.toggle('on', id === t));
   if(t === 'notes') renderNotes();
   if(t === 'vocab') renderVocab();
+  if(t === 'sessions') renderSessions();
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
