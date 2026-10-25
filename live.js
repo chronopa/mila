@@ -54,7 +54,7 @@ function liveConnect(){
   ws.onopen = () => {
     ws.send(JSON.stringify({setup:{
       model: LIVE_MODEL,
-      generationConfig:{responseModalities:['AUDIO']},
+      generationConfig:{responseModalities:['AUDIO'], speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName: DB.settings.liveVoice || 'Kore'}}}},
       // Χωρίς αυτόματη ανίχνευση: ο χρήστης πατά το κουμπί για να μιλήσει και ξαναπατά για αποστολή.
       realtimeInputConfig:{automaticActivityDetection:{disabled:true}},
       systemInstruction:{parts:[{text: liveSystem()}]},
@@ -383,3 +383,9 @@ function pcmWav(chunks){
   chunks.forEach(c => { for(let i = 0; i < c.length; i++){ v.setInt16(o, c[i], true); o += 2; } });
   return new Blob([buf], {type:'audio/wav'});
 }
+
+/* ---------- επιλογή φωνής ---------- */
+try{
+  $('#sLiveVoice').value = DB.settings.liveVoice || 'Kore';
+  $('#sLiveVoice').onchange = () => { DB.settings.liveVoice = $('#sLiveVoice').value; save(); toast('Η φωνή αλλάζει από την επόμενη συνεδρία'); };
+}catch(e){}

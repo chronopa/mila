@@ -175,7 +175,7 @@ body.live .msg.ai::before{content:'A';position:absolute;left:-46px;top:4px;width
     <button class="side" id="btnType" title="Πληκτρολόγιο">⌨️</button>
   </div>
   <div id="hint">Πάτα το 🎙️ για να ξεκινήσεις</div>
-  <div class="ver">mila · έκδοση v27</div>
+  <div class="ver">mila · έκδοση v29</div>
 </footer>
 
 <div class="sheet" id="setSheet"><div class="card">
@@ -196,6 +196,13 @@ body.live .msg.ai::before{content:'A';position:absolute;left:-46px;top:4px;width
   <label>Προφορά</label>
   <select id="sAccent"><option value="en-US">American (en-US)</option><option value="en-GB">British (en-GB)</option></select>
   <label>Φωνή του AI</label>
+  <select id="sLiveVoice">
+    <option value="Kore">Kore</option><option value="Aoede">Aoede</option><option value="Leda">Leda</option>
+    <option value="Zephyr">Zephyr</option><option value="Puck">Puck</option><option value="Charon">Charon</option><option value="Fenrir">Fenrir</option>
+  </select>
+  <div class="sub">Η αλλαγή ισχύει από την επόμενη συνεδρία, δηλαδή μετά από νέο πάτημα του μικροφώνου.</div>
+  <div id="oldVoice" style="display:none">
+  <label>Φωνή του AI (παλιά)</label>
   <select id="sVoiceEng"><option value="browser">Φωνή του iPhone (δωρεάν)</option></select>
   <div id="grpBV"><select id="sVoice" style="margin-top:8px"></select></div>
   <div id="grpOV">
@@ -205,6 +212,7 @@ body.live .msg.ai::before{content:'A';position:absolute;left:-46px;top:4px;width
       <option value="nova">nova</option><option value="onyx">onyx</option><option value="sage">sage</option><option value="shimmer">shimmer</option><option value="verse">verse</option>
     </select>
     <div class="sub">Η φωνή δημιουργείται από AI και δεν είναι ανθρώπινη. Θέλει OpenAI key.</div>
+  </div>
   </div>
   <label>Ταχύτητα ομιλίας: <span id="rateVal"></span></label>
   <input id="sRate" type="range" min="0.7" max="1.2" step="0.05">
